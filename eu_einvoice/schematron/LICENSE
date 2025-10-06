@@ -1,0 +1,26 @@
+File: Factur-X_1.07.2_BASIC_codedb.xml
+License: Unclear. We assume Apache License, Version 2.0
+Author: FNFE-MPE | FeRD
+
+File: Factur-X_1.07.2_EXTENDED_codedb.xml
+License: Unclear. We assume Apache License, Version 2.0
+Author: FNFE-MPE | FeRD
+
+File: Factur-X_1.07.2_BASIC.xsl
+Converted from: Factur-X_1.07.2_BASIC.sch
+License: Unclear. We assume Apache License, Version 2.0
+Author: FNFE-MPE | FeRD
+
+File: Factur-X_1.07.2_EXTENDED.xsl
+Converted from: Factur-X_1.07.2_EXTENDED.sch
+License: Unclear. We assume Apache License, Version 2.0
+Author: FNFE-MPE | FeRD
+
+File: XRechnung-CII-validation.xsl
+License: Apache License, Version 2.0
+Author: Koordinierungsstelle für IT-Standards (KoSIT)
+
+File: EN16931-CII-validation-preprocessed.xsl
+Converted from: EN16931-CII-validation-preprocessed.sch
+License: European Union Public Licence (EUPL) version 1.2
+Author: Connecting Europe Facility (CEF Digital)

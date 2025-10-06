@@ -1,0 +1,596 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2024-08-24 09:41:48.844623",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "document_tab",
+  "file_section_section",
+  "einvoice",
+  "column_break_twhg",
+  "profile",
+  "e_invoice_is_correct",
+  "validation_details_section",
+  "validation_errors",
+  "validation_warnings",
+  "header_section",
+  "issue_date",
+  "id",
+  "section_break_z2sq",
+  "amended_from",
+  "buyer_tab",
+  "buyer_name",
+  "column_break_metg",
+  "company",
+  "purchase_order",
+  "section_break_oyba",
+  "buyer_electronic_address_scheme",
+  "column_break_remv",
+  "buyer_electronic_address",
+  "section_break_qegd",
+  "column_break_reul",
+  "buyer_address_line_1",
+  "buyer_address_line_2",
+  "buyer_postcode",
+  "buyer_city",
+  "buyer_country",
+  "column_break_ldwo",
+  "seller_tab",
+  "seller_name",
+  "seller_tax_id",
+  "column_break_jjaa",
+  "supplier",
+  "create_supplier",
+  "section_break_sqyh",
+  "seller_electronic_address_scheme",
+  "column_break_qxvl",
+  "seller_electronic_address",
+  "section_break_lrsy",
+  "seller_address_line_1",
+  "seller_address_line_2",
+  "seller_postcode",
+  "seller_city",
+  "seller_country",
+  "column_break_foui",
+  "supplier_address",
+  "create_supplier_address",
+  "items_tab",
+  "items",
+  "delivery_tab",
+  "settlement_tab",
+  "settlement_section",
+  "currency",
+  "taxes",
+  "due_date",
+  "payment_terms",
+  "monetary_summation_section",
+  "line_total",
+  "allowance_total",
+  "charge_total",
+  "tax_basis_total",
+  "tax_total",
+  "column_break_wvau",
+  "grand_total",
+  "total_prepaid",
+  "due_payable",
+  "billing_period_section",
+  "billing_period_start",
+  "column_break_etpy",
+  "billing_period_end",
+  "payment_means_section",
+  "payee_account_name",
+  "payee_iban",
+  "payee_bic"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_z2sq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "E Invoice Import",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "file_section_section",
+   "fieldtype": "Section Break",
+   "label": "File Section"
+  },
+  {
+   "description": "Upload the <code>.xml</code> or <code>.pdf</code> file provided by your supplier.",
+   "fieldname": "einvoice",
+   "fieldtype": "Attach",
+   "label": "E-Invoice"
+  },
+  {
+   "fieldname": "seller_name",
+   "fieldtype": "Data",
+   "label": "Seller Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_address_line_1",
+   "fieldtype": "Data",
+   "label": "Seller Address Line 1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_address_line_2",
+   "fieldtype": "Data",
+   "label": "Seller Address Line 2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_city",
+   "fieldtype": "Data",
+   "label": "Seller City",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_postcode",
+   "fieldtype": "Data",
+   "label": "Seller Postcode",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_country",
+   "fieldtype": "Link",
+   "label": "Seller Country",
+   "options": "Country",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval: !doc.supplier",
+   "fieldname": "create_supplier",
+   "fieldtype": "Button",
+   "label": "Create Supplier"
+  },
+  {
+   "fieldname": "column_break_reul",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "buyer_name",
+   "fieldtype": "Data",
+   "label": "Buyer Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_address_line_1",
+   "fieldtype": "Data",
+   "label": "Buyer Address Line 1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_address_line_2",
+   "fieldtype": "Data",
+   "label": "Buyer Address Line 2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_city",
+   "fieldtype": "Data",
+   "label": "Buyer City",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_postcode",
+   "fieldtype": "Data",
+   "label": "Buyer Postcode",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_country",
+   "fieldtype": "Link",
+   "label": "Buyer Country",
+   "options": "Country",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "E Invoice Item"
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "supplier_address",
+   "fieldtype": "Link",
+   "label": "Supplier Address",
+   "options": "Address",
+   "read_only_depends_on": "eval: !doc.supplier"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval: doc.supplier && !doc.supplier_address",
+   "fieldname": "create_supplier_address",
+   "fieldtype": "Button",
+   "label": "Create Supplier Address"
+  },
+  {
+   "fieldname": "seller_tax_id",
+   "fieldtype": "Data",
+   "label": "Seller Tax ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "header_section",
+   "fieldtype": "Section Break",
+   "label": "Header"
+  },
+  {
+   "fieldname": "issue_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Issue Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Invoice ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_order",
+   "fieldtype": "Link",
+   "label": "Purchase Order",
+   "options": "Purchase Order"
+  },
+  {
+   "fieldname": "taxes",
+   "fieldtype": "Table",
+   "label": "Taxes",
+   "options": "E Invoice Trade Tax"
+  },
+  {
+   "fieldname": "payment_terms",
+   "fieldtype": "Table",
+   "label": "Payment Terms",
+   "options": "E Invoice Payment Term"
+  },
+  {
+   "fieldname": "document_tab",
+   "fieldtype": "Tab Break",
+   "label": "Document"
+  },
+  {
+   "fieldname": "column_break_foui",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ldwo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "items_tab",
+   "fieldtype": "Tab Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "delivery_tab",
+   "fieldtype": "Tab Break",
+   "label": "Delivery"
+  },
+  {
+   "fieldname": "settlement_tab",
+   "fieldtype": "Tab Break",
+   "label": "Settlement"
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due Date",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:!doc.e_invoice_is_correct",
+   "fieldname": "validation_errors",
+   "fieldtype": "Text",
+   "label": "Validation Errors",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "validation_details_section",
+   "fieldtype": "Section Break",
+   "label": "Validation Details"
+  },
+  {
+   "fieldname": "column_break_twhg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "e_invoice_is_correct",
+   "fieldtype": "Check",
+   "label": "E Invoice Is Correct",
+   "read_only": 1
+  },
+  {
+   "fieldname": "profile",
+   "fieldtype": "Read Only",
+   "label": "Profile",
+   "options": "BASIC\nEN 16931\nEXTENDED\nXRECHNUNG",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_means_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Means"
+  },
+  {
+   "fieldname": "payee_account_name",
+   "fieldtype": "Data",
+   "label": "Account Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payee_iban",
+   "fieldtype": "Data",
+   "label": "IBAN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payee_bic",
+   "fieldtype": "Data",
+   "label": "BIC",
+   "read_only": 1
+  },
+  {
+   "fieldname": "billing_period_section",
+   "fieldtype": "Section Break",
+   "label": "Billing Period"
+  },
+  {
+   "fieldname": "billing_period_start",
+   "fieldtype": "Date",
+   "label": "Billing Period Start",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_etpy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "billing_period_end",
+   "fieldtype": "Date",
+   "label": "Billing Period End",
+   "read_only": 1
+  },
+  {
+   "fieldname": "monetary_summation_section",
+   "fieldtype": "Section Break",
+   "label": "Monetary Summation"
+  },
+  {
+   "fieldname": "line_total",
+   "fieldtype": "Currency",
+   "label": "Line Total",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tax_basis_total",
+   "fieldtype": "Currency",
+   "label": "Tax Basis Total",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tax_total",
+   "fieldtype": "Currency",
+   "label": "Tax Total",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_wvau",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_prepaid",
+   "fieldtype": "Currency",
+   "label": "Total Prepaid",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "due_payable",
+   "fieldtype": "Currency",
+   "label": "Due Payable",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "allowance_total",
+   "fieldtype": "Currency",
+   "label": "Allowance Total",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "charge_total",
+   "fieldtype": "Currency",
+   "label": "Charge Total",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.validation_warnings",
+   "fieldname": "validation_warnings",
+   "fieldtype": "Text",
+   "label": "Validation Warnings",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_tab",
+   "fieldtype": "Tab Break",
+   "label": "Buyer"
+  },
+  {
+   "fieldname": "column_break_metg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_qegd",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "seller_tab",
+   "fieldtype": "Tab Break",
+   "label": "Seller"
+  },
+  {
+   "fieldname": "column_break_jjaa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_lrsy",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "buyer_electronic_address_scheme",
+   "fieldtype": "Data",
+   "label": "Buyer Electronic Address Scheme",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_electronic_address",
+   "fieldtype": "Data",
+   "label": "Buyer Electronic Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_electronic_address_scheme",
+   "fieldtype": "Data",
+   "label": "Seller Electronic Address Scheme",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seller_electronic_address",
+   "fieldtype": "Data",
+   "label": "Seller Electronic Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_oyba",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_remv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_sqyh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_qxvl",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [
+  {
+   "link_doctype": "Purchase Invoice",
+   "link_fieldname": "e_invoice_import"
+  }
+ ],
+ "modified": "2025-10-04 18:04:03.032057",
+ "modified_by": "Administrator",
+ "module": "European e-Invoice",
+ "name": "E Invoice Import",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase User",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "seller_name"
+}
