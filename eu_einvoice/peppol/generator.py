@@ -89,6 +89,9 @@ class PEPPOLGenerator:
             # Add all document sections
             self._add_document_sections(root, invoice_data, allowances_charges, lines, validated_currency, zero_rated_taxable_amount, has_zero_rated_elements)
             
+            # Format XML with proper indentation for readability
+            ET.indent(root, space="  ", level=0)
+            
             # Convert to string with proper formatting
             return ET.tostring(root, encoding='unicode', xml_declaration=True)
             
