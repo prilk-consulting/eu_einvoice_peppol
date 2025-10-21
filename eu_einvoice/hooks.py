@@ -92,6 +92,10 @@ jinja = {
 # before_install = "eu_einvoice.install.before_install"
 after_install = "eu_einvoice.install.after_install"
 
+# Desk Migrations
+# ---------------
+after_migrate = "eu_einvoice.install.after_install"
+
 # Uninstallation
 # ------------
 
