@@ -13,6 +13,7 @@ from pathlib import Path
 from lxml import etree
 
 
+@frappe.whitelist()
 def setup_peppol_codes():
 	"""Main function to set up PEPPOL code lists."""
 
