@@ -9,6 +9,7 @@ def get_custom_fields():
 			"EN 16931",
 			"EXTENDED",
 			"XRECHNUNG",
+			"PEPPOL",
 		]
 	)
 

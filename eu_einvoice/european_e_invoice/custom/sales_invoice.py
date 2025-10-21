@@ -52,6 +52,7 @@ def get_einvoice(invoice: str | SalesInvoice) -> bytes:
 	if isinstance(invoice, str):
 		invoice = frappe.get_doc("Sales Invoice", invoice)
 
+
 	invoice.check_permission("read")
 	invoice.run_method("before_einvoice_generation")
 
@@ -79,23 +80,47 @@ def get_einvoice(invoice: str | SalesInvoice) -> bytes:
 	company = frappe.get_doc("Company", invoice.company)
 
 	profile = EInvoiceProfile(invoice.einvoice_profile)
-	generator = EInvoiceGenerator(
-		profile=profile,
-		invoice=invoice,
-		company=company,
-		customer=customer,
-		seller_address=seller_address,
-		buyer_address=buyer_address,
-		shipping_address=shipping_address,
-		seller_contact=seller_contact,
-		buyer_contact=buyer_contact,
-	)
-	generator.create_einvoice()
-	doc = generator.get_einvoice()
 
-	invoice.run_method("after_einvoice_generation", doc)
+	if profile == EInvoiceProfile.PEPPOL:
+		# Use PEPPOL generator for PEPPOL profiles
+		from eu_einvoice.peppol.generator import PEPPOLGenerator
+		from eu_einvoice.peppol.profiles import PEPPOLProfile
 
-	return doc.serialize(schema=get_drafthorse_schema(profile))
+		peppol_generator = PEPPOLGenerator(
+			profile=PEPPOLProfile.PEPPOL_BIS_30,
+			invoice=invoice,
+			company=company,
+			customer=customer,
+			seller_address=seller_address,
+			buyer_address=buyer_address,
+			shipping_address=shipping_address,
+			seller_contact=seller_contact,
+			buyer_contact=buyer_contact,
+		)
+		peppol_generator.create_einvoice()
+		doc = peppol_generator.get_einvoice()
+
+		invoice.run_method("after_einvoice_generation", doc)
+		return doc.serialize(schema=None)
+	else:
+		# Use standard EInvoiceGenerator for other profiles
+		generator = EInvoiceGenerator(
+			profile=profile,
+			invoice=invoice,
+			company=company,
+			customer=customer,
+			seller_address=seller_address,
+			buyer_address=buyer_address,
+			shipping_address=shipping_address,
+			seller_contact=seller_contact,
+			buyer_contact=buyer_contact,
+		)
+		generator.create_einvoice()
+		doc = generator.get_einvoice()
+
+		invoice.run_method("after_einvoice_generation", doc)
+
+		return doc.serialize(schema=get_drafthorse_schema(profile))
 
 
 class EInvoiceGenerator:
@@ -808,24 +833,21 @@ def validate_einvoice(doc: SalesInvoice):
 	try:
 		invoice_profile = EInvoiceProfile(doc.einvoice_profile)
 		validation_errors, warnings = get_validation_errors(xml_string, invoice_profile)
-
-		if invoice_profile == EInvoiceProfile.XRECHNUNG:
-			basic_errors, basic_warnings = get_validation_errors(xml_string, EInvoiceProfile.EN16931)
-			validation_errors += basic_errors
-			warnings += basic_warnings
-	except Exception:
+	except Exception as e:
 		msg = _("Cannot validate E Invoice schematron.")
-		doc.validation_errors = msg
-		frappe.log_error(msg, reference_doctype=doc.doctype, reference_name=doc.name)
+		error_details = f"{msg}\nError: {str(e)}\nProfile: {doc.einvoice_profile}"
+		doc.validation_errors = error_details
+		frappe.log_error(error_details, reference_doctype=doc.doctype, reference_name=doc.name)
 		return
 
 	if any(validation_errors):
-		doc.validation_errors += "\n".join(validation_errors)
+		doc.validation_errors = "\n".join(validation_errors)
+		doc.einvoice_is_correct = 0
 	else:
 		doc.einvoice_is_correct = 1
 
 	if any(warnings):
-		doc.validation_warnings += "\n".join(warnings)
+		doc.validation_warnings = "\n".join(warnings)
 
 
 def get_item_rate(item_tax_template: str | None, taxes: list[dict]) -> float | None:

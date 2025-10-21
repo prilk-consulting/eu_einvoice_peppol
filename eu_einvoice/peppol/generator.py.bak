@@ -13,17 +13,16 @@ import frappe
 from .profiles import PEPPOLProfile, get_profile_info
 from eu_einvoice.common_codes import CommonCodeRetriever
 
-# Global code retrievers for PEPPOL standardized codes (following EInvoiceGenerator pattern)
-duty_tax_fee_category_codes = CommonCodeRetriever(["urn:peppol:id:codelist:UNCL5305"], "S")
-uom_codes = CommonCodeRetriever(["urn:peppol:id:codelist:UNECERec20"], "C62")
-payment_means_codes = CommonCodeRetriever(["urn:peppol:id:codelist:UNCL4461"], "ZZZ")
-country_codes = CommonCodeRetriever(["urn:peppol:id:codelist:ISO3166-1_Alpha2"], "DE")
-currency_codes = CommonCodeRetriever(["urn:peppol:id:codelist:ISO4217"], "EUR")
-electronic_address_schemes = CommonCodeRetriever(["urn:peppol:id:codelist:eas"], "EM")
-
-
 class PEPPOLGenerator:
     """Generates PEPPOL BIS Billing 3.0 compliant UBL 2.1 XML documents."""
+
+    # Class-level code retrievers for PEPPOL standardized codes
+    duty_tax_fee_category_codes = CommonCodeRetriever(["urn:peppol:id:codelist:UNCL5305"], "S")
+    uom_codes = CommonCodeRetriever(["urn:peppol:id:codelist:UNECERec20"], "C62")
+    payment_means_codes = CommonCodeRetriever(["urn:peppol:id:codelist:UNCL4461"], "ZZZ")
+    country_codes = CommonCodeRetriever(["urn:peppol:id:codelist:ISO3166-1_Alpha2"], "DE")
+    currency_codes = CommonCodeRetriever(["urn:peppol:id:codelist:ISO4217"], "EUR")
+    electronic_address_schemes = CommonCodeRetriever(["urn:peppol:id:codelist:eas"], "EM")
 
     # UBL namespaces (constant)
     NAMESPACES = {
@@ -32,36 +31,10 @@ class PEPPOLGenerator:
         'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
     }
 
-    def __init__(
-        self,
-        profile: PEPPOLProfile,
-        invoice,
-        company,
-        customer,
-        seller_address=None,
-        buyer_address=None,
-        shipping_address=None,
-        seller_contact=None,
-        buyer_contact=None,
-    ):
-        """Initialize PEPPOL generator with required objects."""
-        if not invoice:
-            raise ValueError("Invoice is required for PEPPOL generation")
-        if not company:
-            raise ValueError("Company is required for PEPPOL generation")
-        if not customer:
-            raise ValueError("Customer is required for PEPPOL generation")
-
+    def __init__(self, profile: PEPPOLProfile = PEPPOLProfile.PEPPOL_BIS_30):
+        """Initialize PEPPOL generator with profile configuration."""
         self.profile = profile
         self.profile_info = get_profile_info(profile)
-        self.invoice = invoice
-        self.company = company
-        self.customer = customer
-        self.seller_address = seller_address
-        self.buyer_address = buyer_address
-        self.shipping_address = shipping_address
-        self.seller_contact = seller_contact
-        self.buyer_contact = buyer_contact
         self.xml_string = None
 
     # Helper methods for cleaner XML generation
@@ -101,21 +74,11 @@ class PEPPOLGenerator:
 
     def create_einvoice(self):
         """Create the PEPPOL XML document."""
-        try:
-            if not self.invoice:
-                raise ValueError("No invoice provided to PEPPOLGenerator")
-
+        if self.invoice:
             # Convert ERPNext data to PEPPOL format
             peppol_data = self._convert_erpnext_to_peppol(self.invoice)
-
             # Generate XML document
             self.xml_string = self._create_peppol_xml(peppol_data)
-
-        except Exception as e:
-            frappe.logger().error(f"PEPPOL generation failed: {str(e)}")
-            import traceback
-            frappe.logger().error(f"PEPPOL traceback: {traceback.format_exc()}")
-            raise
 
     def get_einvoice(self):
         """Return the PEPPOL XML as a mock document object."""
@@ -172,14 +135,15 @@ class PEPPOLGenerator:
             if contact_person:
                 buyer_contact = frappe.get_doc("Contact", contact_person)
             
-            # Get company and customer
+            # Get company
             company = frappe.get_doc("Company", invoice.company)
-            customer = frappe.get_doc("Customer", invoice.customer)
             
             posting_date = getattr(invoice, 'posting_date', None)
             due_date = getattr(invoice, 'due_date', None)
             
-            # Electronic addresses are now handled by _get_seller_electronic_address and _get_buyer_electronic_address methods
+            # Get electronic addresses for BR-CL-10 compliance
+            supplier_email = getattr(company, 'email', '')
+            customer_email = getattr(invoice, 'contact_email', '')
 
             # Convert to PEPPOL format
             validated_currency = self._validate_currency_code(getattr(invoice, 'currency', 'EUR'))
@@ -195,7 +159,7 @@ class PEPPOLGenerator:
                     'name': invoice.company,
                     'tax_id': getattr(invoice, 'company_tax_id', ''),
                     'legal_name': getattr(company, 'company_name', invoice.company),
-                    'electronic_address': self._get_seller_electronic_address(company, seller_contact),
+                    'electronic_address': self._get_electronic_address(getattr(invoice, 'company_tax_id', ''), getattr(company, 'country', ''), supplier_email),
                     'country': getattr(company, 'country', ''),
                     'address': self._convert_address_to_peppol(seller_address) if seller_address else None,
                     'contact': self._convert_contact_to_peppol(seller_contact) if seller_contact else None,
@@ -203,7 +167,7 @@ class PEPPOLGenerator:
                 'customer': {
                     'name': invoice.customer_name,
                     'tax_id': getattr(invoice, 'tax_id', ''),
-					'electronic_address': self._get_buyer_electronic_address(customer, invoice, buyer_contact, buyer_address),
+                    'electronic_address': self._get_electronic_address(getattr(invoice, 'tax_id', ''), buyer_address.country if buyer_address else '', customer_email),
                     'country': buyer_address.country if buyer_address else '',
                     'address': self._convert_address_to_peppol(buyer_address) if buyer_address else None,
                     'contact': self._convert_contact_to_peppol(buyer_contact) if buyer_contact else None,
@@ -241,10 +205,11 @@ class PEPPOLGenerator:
                         }
                         invoice_data['lines'].append(line_data)
                     except Exception as e:
-                        # Skip problematic line items but continue processing
+                        frappe.logger().error(f"Error processing invoice line: {str(e)}")
                         continue
             except Exception as e:
                 frappe.logger().error(f"Error iterating over items: {str(e)}")
+                frappe.logger().error(f"Items value: {items}")
                 raise
             
             # Calculate taxable amounts per VAT rate for BR-S-08 compliance
@@ -300,6 +265,7 @@ class PEPPOLGenerator:
                     invoice_data['taxes'].append(tax_data)
             except Exception as e:
                 frappe.logger().error(f"Error iterating over taxes: {str(e)}")
+                frappe.logger().error(f"Taxes value: {taxes}")
                 raise
 
             # Extract document-level allowances/charges
@@ -370,9 +336,8 @@ class PEPPOLGenerator:
                         'document_description': f"Attachment: {attachment.file_name}",
                     }
                     document_references.append(ref_data)
-            except Exception:
-                # Silently skip attachments if they can't be retrieved
-                pass
+            except Exception as e:
+                frappe.logger().warning(f"Could not retrieve attachments for invoice {invoice.name}: {str(e)}")
 
             if document_references:
                 invoice_data['document_references'] = document_references
@@ -394,7 +359,9 @@ class PEPPOLGenerator:
             return invoice_data
             
         except Exception as e:
-            frappe.logger().error(f"PEPPOL conversion failed: {str(e)}")
+            import traceback
+            frappe.logger().error(f"PEPPOL conversion failed for invoice {invoice.name}: {str(e)}")
+            frappe.logger().error(f"PEPPOL conversion error traceback: {traceback.format_exc()}")
             raise
     
     def _format_date(self, date):
@@ -413,13 +380,15 @@ class PEPPOLGenerator:
                     except ValueError:
                         continue
                 # If no format matches, return the original string
+                frappe.logger().warning(f"Could not parse date string: {date}, using as-is")
                 return date
-
+            
             # If it's a datetime object, format it
             if hasattr(date, 'strftime'):
                 return date.strftime('%Y-%m-%d')
-
+            
             # If it doesn't have strftime, convert to string
+            frappe.logger().warning(f"Date object has no strftime method: {type(date)}, converting to string")
             return str(date)
             
         except Exception as e:
@@ -558,11 +527,12 @@ class PEPPOLGenerator:
 
             # Fallback: Check against PEPPOL schematron ISO 4217 codes
             if currency_code in peppol_iso4217_currencies:
+                frappe.logger().info(f"Using PEPPOL ISO 4217 currency code: {currency_code}")
                 return currency_code
 
             # BR-CL-03 requires codes from ISO 4217 list only
             # If not found in official list or common list, reject it
-            frappe.logger().warning(f"Invalid currency code '{currency_code}', using EUR")
+            frappe.logger().warning(f"Currency code '{currency_code}' not recognized as valid ISO 4217 code, using EUR")
             return 'EUR'
 
         except Exception as e:
@@ -579,7 +549,8 @@ class PEPPOLGenerator:
                 'postal_code': getattr(address, 'pincode', ''),
                 'country_code': getattr(address, 'country', ''),
             }
-        except Exception:
+        except Exception as e:
+            frappe.logger().error(f"Error converting address to PEPPOL format: {str(e)}")
             return {
                 'street': '',
                 'additional_street': '',
@@ -602,69 +573,30 @@ class PEPPOLGenerator:
                 'telephone': getattr(contact, 'phone', ''),
                 'email': getattr(contact, 'email_id', ''),
             }
-        except Exception:
+        except Exception as e:
+            frappe.logger().error(f"Error converting contact to PEPPOL format: {str(e)}")
             return {
                 'name': '',
                 'telephone': '',
                 'email': '',
             }
     
-    def _get_seller_electronic_address(self, company, seller_contact=None) -> dict[str, str] | None:
-        """Get seller electronic address using the same logic as main e-invoice application.
+    def _get_electronic_address(self, tax_id: str, country: str, email: str) -> dict[str, str] | None:
+        """Get electronic address with proper EAS schemeID for PEPPOL compliance.
 
-        Args:
-            company: Company doctype object
-            seller_contact: Seller contact object (optional)
-            
-        Returns:
-            dict with 'value' and 'scheme_id' keys, or None if no valid identifier.
+        Returns dict with 'value' and 'scheme_id' keys, or None if no valid identifier.
         """
-        # Priority: Use configured electronic address scheme and address
-        if company.electronic_address_scheme and company.electronic_address:
-            scheme_id = frappe.db.get_value("Common Code", company.electronic_address_scheme, "common_code")
+        # Priority: VAT number with country-specific EAS code
+        if tax_id and country:
+            # Get the EAS scheme ID using CommonCodeRetriever
+            scheme_id = electronic_address_schemes.get([("Country", country)])
             if scheme_id:
-                return {'value': company.electronic_address, 'scheme_id': scheme_id}
+                # Remove country prefix from VAT number if present
+                vat_value = tax_id.lstrip(country.upper())
+                return {'value': vat_value, 'scheme_id': scheme_id}
 
-        # Fallback: Use email from contact or company
-        electronic_address = None
-        if seller_contact and seller_contact.email_id:
-            electronic_address = seller_contact.email_id
-        else:
-            electronic_address = company.email
-
-        if electronic_address:
-            return {'value': electronic_address, 'scheme_id': 'EM'}
-
-        return None
-
-    def _get_buyer_electronic_address(self, customer, invoice, buyer_contact=None, buyer_address=None) -> dict[str, str] | None:
-        """Get buyer electronic address using the same logic as main e-invoice application.
-
-        Args:
-            customer: Customer doctype object
-            invoice: Sales Invoice doctype object
-            buyer_contact: Buyer contact object (optional)
-            buyer_address: Buyer address object (optional)
-            
-        Returns:
-            dict with 'value' and 'scheme_id' keys, or None if no valid identifier.
-        """
-        # Priority: Use configured electronic address scheme and address
-        if customer.electronic_address_scheme and customer.electronic_address:
-            scheme_id = frappe.db.get_value("Common Code", customer.electronic_address_scheme, "common_code")
-            if scheme_id:
-                return {'value': customer.electronic_address, 'scheme_id': scheme_id}
-
-        # Fallback: Use email from invoice, contact, or address
-        electronic_address = None
-        if invoice.contact_email:
-            electronic_address = invoice.contact_email
-        elif buyer_address and buyer_address.email_id:
-            electronic_address = buyer_address.email_id
-
-        if electronic_address:
-            return {'value': electronic_address, 'scheme_id': 'EM'}
-
+        # Fallback: Email (but this violates EAS codelist - should not be used)
+        # We return None to avoid invalid EAS codes
         return None
 
     def _get_bank_details(self, mode_of_payment: str, company: str) -> tuple[str | None, str | None]:
@@ -693,7 +625,8 @@ class PEPPOLGenerator:
             bic = frappe.db.get_value("Bank", bank, "swift_number") if bank else None
             return (iban, bic or None)
             
-        except Exception:
+        except Exception as e:
+            frappe.logger().error(f"Error getting bank details: {str(e)}")
             return (None, None)
     
     def _add_document_header(self, root: ET.Element, data: Dict[str, Any]):
@@ -701,70 +634,72 @@ class PEPPOLGenerator:
         
         try:
             # Customization ID
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}CustomizationID").text = \
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}CustomizationID").text = \
                 self.profile_info["customization_id"]
             
             # Profile ID
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}ProfileID").text = \
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}ProfileID").text = \
                 self.profile.value
             
             # Document ID
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}ID").text = \
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}ID").text = \
                 data.get('invoice_id', 'INV-001')
             
             # Issue Date
             issue_date = data.get('issue_date')
             if not issue_date:
                 issue_date = datetime.now().strftime('%Y-%m-%d')
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}IssueDate").text = str(issue_date)
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}IssueDate").text = str(issue_date)
             
             # Due Date
             if 'due_date' in data and data['due_date']:
-                ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}DueDate").text = str(data['due_date'])
+                ET.SubElement(root, f"{{{self.namespaces['cbc']}}}DueDate").text = str(data['due_date'])
             
             # Invoice Type Code (380 = Commercial Invoice)
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}InvoiceTypeCode").text = '380'
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}InvoiceTypeCode").text = '380'
             
             # Document Currency Code - BT-5 (must be valid ISO 4217 code)
             document_currency = self._validate_currency_code(data.get('currency', 'EUR'))
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}DocumentCurrencyCode").text = document_currency
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}DocumentCurrencyCode").text = document_currency
             
             # UBL Version ID
-            ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}UBLVersionID").text = '2.1'
+            ET.SubElement(root, f"{{{self.namespaces['cbc']}}}UBLVersionID").text = '2.1'
             
             # Buyer Reference or Order Reference - Required for PEPPOL-EN16931-R003
             if data.get('buyer_reference'):
-                ET.SubElement(root, f"{{{self.NAMESPACES['cbc']}}}BuyerReference").text = \
+                ET.SubElement(root, f"{{{self.namespaces['cbc']}}}BuyerReference").text = \
                     data['buyer_reference']
             elif data.get('po_no'):
                 # Use OrderReference if no buyer reference but PO number exists
-                order_reference = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}OrderReference")
-                ET.SubElement(order_reference, f"{{{self.NAMESPACES['cbc']}}}ID").text = data['po_no']
+                order_reference = ET.SubElement(root, f"{{{self.namespaces['cac']}}}OrderReference")
+                ET.SubElement(order_reference, f"{{{self.namespaces['cbc']}}}ID").text = data['po_no']
                     
         except Exception as e:
+            import traceback
             frappe.logger().error(f"PEPPOL document header error: {str(e)}")
+            frappe.logger().error(f"PEPPOL document header error traceback: {traceback.format_exc()}")
             raise
     
     def _add_supplier_party(self, root: ET.Element, supplier_data: Dict[str, Any]):
         """Add supplier party information."""
         
-        supplier_party = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}AccountingSupplierParty")
-        party = ET.SubElement(supplier_party, f"{{{self.NAMESPACES['cac']}}}Party")
+        supplier_party = ET.SubElement(root, f"{{{self.namespaces['cac']}}}AccountingSupplierParty")
+        party = ET.SubElement(supplier_party, f"{{{self.namespaces['cac']}}}Party")
 
         # EndpointID (Electronic Address) - Required for PEPPOL-EN16931-R020
         electronic_addr = supplier_data.get('electronic_address')
         if electronic_addr and isinstance(electronic_addr, dict):
-            ET.SubElement(party, f"{{{self.NAMESPACES['cbc']}}}EndpointID",
+            ET.SubElement(party, f"{{{self.namespaces['cbc']}}}EndpointID",
                          schemeID=electronic_addr['scheme_id']).text = electronic_addr['value']
 
         # Party Identification
         if supplier_data.get('tax_id'):
-            party_id = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyIdentification")
-            ET.SubElement(party_id, f"{{{self.NAMESPACES['cbc']}}}ID").text = supplier_data['tax_id']
+            party_id = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyIdentification")
+            ET.SubElement(party_id, f"{{{self.namespaces['cbc']}}}ID").text = supplier_data['tax_id']
         
         # Party Name
-        party_name = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyName")
-        ET.SubElement(party_name, f"{{{self.NAMESPACES['cbc']}}}Name").text = \
+        party_name = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyName")
+        ET.SubElement(party_name, f"{{{self.namespaces['cbc']}}}Name").text = \
             supplier_data.get('name', 'Supplier Name')
         
         # Postal Address
@@ -773,15 +708,15 @@ class PEPPOLGenerator:
         
         # Party Tax Scheme
         if supplier_data.get('tax_id'):
-            party_tax = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyTaxScheme")
-            ET.SubElement(party_tax, f"{{{self.NAMESPACES['cbc']}}}CompanyID").text = \
+            party_tax = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyTaxScheme")
+            ET.SubElement(party_tax, f"{{{self.namespaces['cbc']}}}CompanyID").text = \
                 supplier_data['tax_id']
-            tax_scheme = ET.SubElement(party_tax, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-            ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+            tax_scheme = ET.SubElement(party_tax, f"{{{self.namespaces['cac']}}}TaxScheme")
+            ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
         
         # Party Legal Entity - Required for seller name (BT-27)
-        legal_entity = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyLegalEntity")
-        ET.SubElement(legal_entity, f"{{{self.NAMESPACES['cbc']}}}RegistrationName").text = \
+        legal_entity = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyLegalEntity")
+        ET.SubElement(legal_entity, f"{{{self.namespaces['cbc']}}}RegistrationName").text = \
             supplier_data.get('legal_name', supplier_data.get('name', 'Supplier Name'))
         
         # Contact
@@ -791,23 +726,23 @@ class PEPPOLGenerator:
     def _add_customer_party(self, root: ET.Element, customer_data: Dict[str, Any]):
         """Add customer party information."""
         
-        customer_party = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}AccountingCustomerParty")
-        party = ET.SubElement(customer_party, f"{{{self.NAMESPACES['cac']}}}Party")
+        customer_party = ET.SubElement(root, f"{{{self.namespaces['cac']}}}AccountingCustomerParty")
+        party = ET.SubElement(customer_party, f"{{{self.namespaces['cac']}}}Party")
 
         # EndpointID (Electronic Address) - Required for PEPPOL-EN16931-R010
         electronic_addr = customer_data.get('electronic_address')
         if electronic_addr and isinstance(electronic_addr, dict):
-            ET.SubElement(party, f"{{{self.NAMESPACES['cbc']}}}EndpointID",
+            ET.SubElement(party, f"{{{self.namespaces['cbc']}}}EndpointID",
                          schemeID=electronic_addr['scheme_id']).text = electronic_addr['value']
 
         # Party Identification
         if customer_data.get('tax_id'):
-            party_id = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyIdentification")
-            ET.SubElement(party_id, f"{{{self.NAMESPACES['cbc']}}}ID").text = customer_data['tax_id']
+            party_id = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyIdentification")
+            ET.SubElement(party_id, f"{{{self.namespaces['cbc']}}}ID").text = customer_data['tax_id']
         
         # Party Name
-        party_name = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyName")
-        ET.SubElement(party_name, f"{{{self.NAMESPACES['cbc']}}}Name").text = \
+        party_name = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyName")
+        ET.SubElement(party_name, f"{{{self.namespaces['cbc']}}}Name").text = \
             customer_data.get('name', 'Customer Name')
         
         # Postal Address
@@ -816,15 +751,15 @@ class PEPPOLGenerator:
         
         # Party Tax Scheme
         if customer_data.get('tax_id'):
-            party_tax = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyTaxScheme")
-            ET.SubElement(party_tax, f"{{{self.NAMESPACES['cbc']}}}CompanyID").text = \
+            party_tax = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyTaxScheme")
+            ET.SubElement(party_tax, f"{{{self.namespaces['cbc']}}}CompanyID").text = \
                 customer_data['tax_id']
-            tax_scheme = ET.SubElement(party_tax, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-            ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+            tax_scheme = ET.SubElement(party_tax, f"{{{self.namespaces['cac']}}}TaxScheme")
+            ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
 
         # Party Legal Entity - Required for buyer name (BT-44)
-        legal_entity = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PartyLegalEntity")
-        ET.SubElement(legal_entity, f"{{{self.NAMESPACES['cbc']}}}RegistrationName").text = \
+        legal_entity = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PartyLegalEntity")
+        ET.SubElement(legal_entity, f"{{{self.namespaces['cbc']}}}RegistrationName").text = \
             customer_data.get('name', 'Customer Name')
 
         # Contact
@@ -844,29 +779,29 @@ class PEPPOLGenerator:
         )
 
         if has_address_data:
-            postal_address = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}PostalAddress")
+            postal_address = ET.SubElement(party, f"{{{self.namespaces['cac']}}}PostalAddress")
 
             if address_data.get('street'):
-                ET.SubElement(postal_address, f"{{{self.NAMESPACES['cbc']}}}StreetName").text = \
+                ET.SubElement(postal_address, f"{{{self.namespaces['cbc']}}}StreetName").text = \
                     address_data['street']
 
             if address_data.get('additional_street'):
-                ET.SubElement(postal_address, f"{{{self.NAMESPACES['cbc']}}}AdditionalStreetName").text = \
+                ET.SubElement(postal_address, f"{{{self.namespaces['cbc']}}}AdditionalStreetName").text = \
                     address_data['additional_street']
 
             if address_data.get('city'):
-                ET.SubElement(postal_address, f"{{{self.NAMESPACES['cbc']}}}CityName").text = \
+                ET.SubElement(postal_address, f"{{{self.namespaces['cbc']}}}CityName").text = \
                     address_data['city']
 
             if address_data.get('postal_code'):
-                ET.SubElement(postal_address, f"{{{self.NAMESPACES['cbc']}}}PostalZone").text = \
+                ET.SubElement(postal_address, f"{{{self.namespaces['cbc']}}}PostalZone").text = \
                     address_data['postal_code']
 
             if address_data.get('country_code'):
-                country = ET.SubElement(postal_address, f"{{{self.NAMESPACES['cac']}}}Country")
+                country = ET.SubElement(postal_address, f"{{{self.namespaces['cac']}}}Country")
                 # Use CommonCodeRetriever to get ISO country code (BT-40)
                 country_code = country_codes.get([("Country", address_data['country_code'])])
-                ET.SubElement(country, f"{{{self.NAMESPACES['cbc']}}}IdentificationCode").text = \
+                ET.SubElement(country, f"{{{self.namespaces['cbc']}}}IdentificationCode").text = \
                     country_code or address_data['country_code']
     
     def _add_contact(self, party: ET.Element, contact_data: Dict[str, Any]):
@@ -880,36 +815,36 @@ class PEPPOLGenerator:
         )
 
         if has_contact_data:
-            contact = ET.SubElement(party, f"{{{self.NAMESPACES['cac']}}}Contact")
+            contact = ET.SubElement(party, f"{{{self.namespaces['cac']}}}Contact")
 
             if contact_data.get('name'):
-                ET.SubElement(contact, f"{{{self.NAMESPACES['cbc']}}}Name").text = \
+                ET.SubElement(contact, f"{{{self.namespaces['cbc']}}}Name").text = \
                     contact_data['name']
 
             if contact_data.get('telephone'):
-                ET.SubElement(contact, f"{{{self.NAMESPACES['cbc']}}}Telephone").text = \
+                ET.SubElement(contact, f"{{{self.namespaces['cbc']}}}Telephone").text = \
                     contact_data['telephone']
 
             if contact_data.get('email'):
-                ET.SubElement(contact, f"{{{self.NAMESPACES['cbc']}}}ElectronicMail").text = contact_data['email']
+                ET.SubElement(contact, f"{{{self.namespaces['cbc']}}}ElectronicMail").text = contact_data['email']
     
     def _add_delivery(self, root: ET.Element, delivery_data: Dict[str, Any]):
         """Add delivery information."""
         
-        delivery = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}Delivery")
+        delivery = ET.SubElement(root, f"{{{self.namespaces['cac']}}}Delivery")
         
         if 'delivery_date' in delivery_data:
-            ET.SubElement(delivery, f"{{{self.NAMESPACES['cbc']}}}ActualDeliveryDate").text = \
+            ET.SubElement(delivery, f"{{{self.namespaces['cbc']}}}ActualDeliveryDate").text = \
                 delivery_data['delivery_date']
         
         if 'address' in delivery_data:
-            delivery_location = ET.SubElement(delivery, f"{{{self.NAMESPACES['cac']}}}DeliveryLocation")
+            delivery_location = ET.SubElement(delivery, f"{{{self.namespaces['cac']}}}DeliveryLocation")
             self._add_postal_address(delivery_location, delivery_data['address'])
     
     def _add_payment_means(self, root: ET.Element, payment_data: Dict[str, Any], supplier_country: str = '', customer_country: str = ''):
         """Add payment means information."""
 
-        payment_means = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}PaymentMeans")
+        payment_means = ET.SubElement(root, f"{{{self.namespaces['cac']}}}PaymentMeans")
 
         # Payment Means Code - BR-61 requires account info for codes 30, 58
         mode_of_payment = payment_data.get('mode_of_payment')
@@ -939,74 +874,74 @@ class PEPPOLGenerator:
                     # No account info, use bank card (48) which doesn't require account info per BR-61
                     payment_means_code = '48'
 
-        ET.SubElement(payment_means, f"{{{self.NAMESPACES['cbc']}}}PaymentMeansCode").text = payment_means_code
+        ET.SubElement(payment_means, f"{{{self.namespaces['cbc']}}}PaymentMeansCode").text = payment_means_code
         
         # Payment Due Date
         if 'due_date' in payment_data:
-            ET.SubElement(payment_means, f"{{{self.NAMESPACES['cbc']}}}PaymentDueDate").text = \
+            ET.SubElement(payment_means, f"{{{self.namespaces['cbc']}}}PaymentDueDate").text = \
                 payment_data['due_date']
         
         # Payment Channel Code
         if 'channel_code' in payment_data:
-            ET.SubElement(payment_means, f"{{{self.NAMESPACES['cbc']}}}PaymentChannelCode").text = \
+            ET.SubElement(payment_means, f"{{{self.namespaces['cbc']}}}PaymentChannelCode").text = \
                 payment_data['channel_code']
         
         # Payment ID
         if 'payment_id' in payment_data:
-            ET.SubElement(payment_means, f"{{{self.NAMESPACES['cbc']}}}PaymentID").text = \
+            ET.SubElement(payment_means, f"{{{self.namespaces['cbc']}}}PaymentID").text = \
                 payment_data['payment_id']
         
         # Payee Financial Account (BR-61 requires this for codes 30, 58)
         if has_account_info:
-            payee_account = ET.SubElement(payment_means, f"{{{self.NAMESPACES['cac']}}}PayeeFinancialAccount")
+            payee_account = ET.SubElement(payment_means, f"{{{self.namespaces['cac']}}}PayeeFinancialAccount")
             account_info = payment_data['account']
-            ET.SubElement(payee_account, f"{{{self.NAMESPACES['cbc']}}}ID").text = account_info['iban']
+            ET.SubElement(payee_account, f"{{{self.namespaces['cbc']}}}ID").text = account_info['iban']
 
             # Financial Institution Branch (BIC)
             if account_info.get('bic'):
-                fin_institution = ET.SubElement(payee_account, f"{{{self.NAMESPACES['cac']}}}FinancialInstitutionBranch")
-                ET.SubElement(fin_institution, f"{{{self.NAMESPACES['cbc']}}}ID").text = account_info['bic']
+                fin_institution = ET.SubElement(payee_account, f"{{{self.namespaces['cac']}}}FinancialInstitutionBranch")
+                ET.SubElement(fin_institution, f"{{{self.namespaces['cbc']}}}ID").text = account_info['bic']
     
     def _add_payment_terms(self, root: ET.Element, terms_data: Dict[str, Any]):
         """Add payment terms information."""
         
-        payment_terms = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}PaymentTerms")
+        payment_terms = ET.SubElement(root, f"{{{self.namespaces['cac']}}}PaymentTerms")
         
         if 'note' in terms_data:
-            ET.SubElement(payment_terms, f"{{{self.NAMESPACES['cbc']}}}Note").text = \
+            ET.SubElement(payment_terms, f"{{{self.namespaces['cbc']}}}Note").text = \
                 terms_data['note']
         
         if 'amount' in terms_data:
-            ET.SubElement(payment_terms, f"{{{self.NAMESPACES['cbc']}}}Amount").text = \
+            ET.SubElement(payment_terms, f"{{{self.namespaces['cbc']}}}Amount").text = \
                 str(terms_data['amount'])
 
     def _add_allowance_charge(self, root: ET.Element, ac_data: Dict[str, Any]):
         """Add document-level allowance or charge information."""
-        allowance_charge = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}AllowanceCharge")
+        allowance_charge = ET.SubElement(root, f"{{{self.namespaces['cac']}}}AllowanceCharge")
 
         # Charge indicator (true = charge/surcharge, false = allowance/discount)
         charge_indicator = ac_data.get('charge_indicator', 'false')
-        ET.SubElement(allowance_charge, f"{{{self.NAMESPACES['cbc']}}}ChargeIndicator").text = charge_indicator
+        ET.SubElement(allowance_charge, f"{{{self.namespaces['cbc']}}}ChargeIndicator").text = charge_indicator
 
         # Amount (always positive) - must have currencyID per PEPPOL rules
         if 'amount' in ac_data:
-            ET.SubElement(allowance_charge, f"{{{self.NAMESPACES['cbc']}}}Amount",
+            ET.SubElement(allowance_charge, f"{{{self.namespaces['cbc']}}}Amount",
                          currencyID=ac_data.get('currency', 'EUR')).text = \
                 str(ac_data['amount'])
 
         # Reason (optional)
         if ac_data.get('reason'):
-            ET.SubElement(allowance_charge, f"{{{self.NAMESPACES['cbc']}}}AllowanceChargeReason").text = \
+            ET.SubElement(allowance_charge, f"{{{self.namespaces['cbc']}}}AllowanceChargeReason").text = \
                 ac_data['reason']
 
         # Reason code (optional)
         if ac_data.get('reason_code'):
-            ET.SubElement(allowance_charge, f"{{{self.NAMESPACES['cbc']}}}AllowanceChargeReasonCode").text = \
+            ET.SubElement(allowance_charge, f"{{{self.namespaces['cbc']}}}AllowanceChargeReasonCode").text = \
                 ac_data['reason_code']
 
         # Tax Category (BR-37: required for charges)
         if charge_indicator == 'true':  # Only for charges
-            tax_category = ET.SubElement(allowance_charge, f"{{{self.NAMESPACES['cac']}}}TaxCategory")
+            tax_category = ET.SubElement(allowance_charge, f"{{{self.namespaces['cac']}}}TaxCategory")
 
             # VAT Category Code (BT-102) and Rate (BT-103) - BR-S-07 compliance
             vat_category_code = ac_data.get('vat_category_code', 'Z')  # Default to Z for safety
@@ -1016,53 +951,53 @@ class PEPPOLGenerator:
             if vat_category_code == 'S' and vat_rate <= 0:
                 # Convert to Zero rated for BR-S-07 compliance
                 vat_category_code = 'Z'
-                # Converting Standard rated charge to Zero rated due to zero/negative VAT rate
+                frappe.logger().warning(f"Converting Standard rated charge to Zero rated due to zero/negative VAT rate: {ac_data}")
 
-            ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}ID").text = vat_category_code
+            ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}ID").text = vat_category_code
 
             # VAT Rate (BT-103) - BR-S-07 for Standard rated, BR-Z-07 for Zero rated
             if vat_category_code == 'S':
                 # Standard rated: rate must be > 0 (BR-S-07)
                 if vat_rate > 0:
-                    ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}Percent").text = str(vat_rate)
+                    ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}Percent").text = str(vat_rate)
                 else:
                     # Fallback for safety
-                    ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}Percent").text = '0'
+                    ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}Percent").text = '0'
             elif vat_category_code == 'Z':
                 # Zero rated: rate must be 0 (BR-Z-07)
-                ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}Percent").text = '0'
+                ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}Percent").text = '0'
             # For other categories, don't include Percent element
 
             # Tax Scheme
-            tax_scheme = ET.SubElement(tax_category, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-            ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+            tax_scheme = ET.SubElement(tax_category, f"{{{self.namespaces['cac']}}}TaxScheme")
+            ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
 
     def _add_additional_document_reference(self, root: ET.Element, ref_data: Dict[str, Any]):
         """Add additional document reference information."""
-        doc_ref = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}AdditionalDocumentReference")
+        doc_ref = ET.SubElement(root, f"{{{self.namespaces['cac']}}}AdditionalDocumentReference")
 
         # Document ID (required)
         if 'id' in ref_data:
-            ET.SubElement(doc_ref, f"{{{self.NAMESPACES['cbc']}}}ID").text = ref_data['id']
+            ET.SubElement(doc_ref, f"{{{self.namespaces['cbc']}}}ID").text = ref_data['id']
 
         # Document Type Code (optional)
         if ref_data.get('document_type_code'):
-            ET.SubElement(doc_ref, f"{{{self.NAMESPACES['cbc']}}}DocumentTypeCode").text = \
+            ET.SubElement(doc_ref, f"{{{self.namespaces['cbc']}}}DocumentTypeCode").text = \
                 ref_data['document_type_code']
 
         # Document Type (optional)
         if ref_data.get('document_type'):
-            ET.SubElement(doc_ref, f"{{{self.NAMESPACES['cbc']}}}DocumentType").text = \
+            ET.SubElement(doc_ref, f"{{{self.namespaces['cbc']}}}DocumentType").text = \
                 ref_data['document_type']
 
         # Document Description (optional)
         if ref_data.get('document_description'):
-            ET.SubElement(doc_ref, f"{{{self.NAMESPACES['cbc']}}}DocumentDescription").text = \
+            ET.SubElement(doc_ref, f"{{{self.namespaces['cbc']}}}DocumentDescription").text = \
                 ref_data['document_description']
 
         # Attachment (optional - for binary attachments)
         if ref_data.get('attachment'):
-            attachment = ET.SubElement(doc_ref, f"{{{self.NAMESPACES['cac']}}}Attachment")
+            attachment = ET.SubElement(doc_ref, f"{{{self.namespaces['cac']}}}Attachment")
             # Could add EmbeddedDocumentBinaryObject here for actual file content
             pass
 
@@ -1075,13 +1010,13 @@ class PEPPOLGenerator:
             taxes = []
 
         # Create single TaxTotal element containing total tax amount
-        tax_total = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}TaxTotal")
+        tax_total = ET.SubElement(root, f"{{{self.namespaces['cac']}}}TaxTotal")
 
         # Calculate total tax amount across all taxes
         total_tax_amount = sum(tax.get('amount', 0) for tax in taxes)
         currency = validated_currency
 
-        ET.SubElement(tax_total, f"{{{self.NAMESPACES['cbc']}}}TaxAmount",
+        ET.SubElement(tax_total, f"{{{self.namespaces['cbc']}}}TaxAmount",
                      currencyID=currency).text = str(total_tax_amount)
 
         # Group taxes by rate and category for TaxSubtotal (VAT breakdown BG-23)
@@ -1106,32 +1041,32 @@ class PEPPOLGenerator:
 
         # Create TaxSubtotal elements for each unique tax rate/category combination
         for key, subtotal_data in tax_subtotals_map.items():
-            tax_subtotal = ET.SubElement(tax_total, f"{{{self.NAMESPACES['cac']}}}TaxSubtotal")
+            tax_subtotal = ET.SubElement(tax_total, f"{{{self.namespaces['cac']}}}TaxSubtotal")
 
             # Taxable Amount (BT-116)
             taxable_xml = str(subtotal_data['taxable_amount'])
-            ET.SubElement(tax_subtotal, f"{{{self.NAMESPACES['cbc']}}}TaxableAmount",
+            ET.SubElement(tax_subtotal, f"{{{self.namespaces['cbc']}}}TaxableAmount",
                          currencyID=currency).text = taxable_xml
 
             # Tax Amount (BT-117)
             tax_xml = str(subtotal_data['tax_amount'])
-            ET.SubElement(tax_subtotal, f"{{{self.NAMESPACES['cbc']}}}TaxAmount",
+            ET.SubElement(tax_subtotal, f"{{{self.namespaces['cbc']}}}TaxAmount",
                          currencyID=currency).text = tax_xml
 
 
             # Tax Category
-            tax_category = ET.SubElement(tax_subtotal, f"{{{self.NAMESPACES['cac']}}}TaxCategory")
+            tax_category = ET.SubElement(tax_subtotal, f"{{{self.namespaces['cac']}}}TaxCategory")
 
             # VAT Category Code (BT-118) - This is what BR-S-01 validates
-            ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}ID").text = subtotal_data['category_id']
+            ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}ID").text = subtotal_data['category_id']
 
             # VAT Rate (BT-119)
             if subtotal_data['percent'] > 0:
-                ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}Percent").text = str(subtotal_data['percent'])
+                ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}Percent").text = str(subtotal_data['percent'])
 
             # Tax Scheme
-            tax_scheme = ET.SubElement(tax_category, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-            ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+            tax_scheme = ET.SubElement(tax_category, f"{{{self.namespaces['cac']}}}TaxScheme")
+            ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
 
             # BR-Z-01/BR-Z-08: Ensure Zero rated VAT breakdown exists if we have Zero rated elements
             # Check if we already have a Zero rated VAT breakdown
@@ -1139,36 +1074,36 @@ class PEPPOLGenerator:
 
             # If we have Zero rated elements but no Zero rated breakdown, add one
             if has_zero_rated_elements and not has_zero_rated_breakdown:
-                tax_subtotal = ET.SubElement(tax_total, f"{{{self.NAMESPACES['cac']}}}TaxSubtotal")
+                tax_subtotal = ET.SubElement(tax_total, f"{{{self.namespaces['cac']}}}TaxSubtotal")
 
                 # Taxable Amount (BT-116) - Calculated per BR-Z-08
-                ET.SubElement(tax_subtotal, f"{{{self.NAMESPACES['cbc']}}}TaxableAmount",
+                ET.SubElement(tax_subtotal, f"{{{self.namespaces['cbc']}}}TaxableAmount",
                              currencyID=currency).text = str(zero_rated_taxable_amount)
 
                 # Tax Amount (BT-117) - Zero for zero rated
-                ET.SubElement(tax_subtotal, f"{{{self.NAMESPACES['cbc']}}}TaxAmount",
+                ET.SubElement(tax_subtotal, f"{{{self.namespaces['cbc']}}}TaxAmount",
                              currencyID=currency).text = '0.00'
 
                 # Tax Category
-                tax_category = ET.SubElement(tax_subtotal, f"{{{self.NAMESPACES['cac']}}}TaxCategory")
+                tax_category = ET.SubElement(tax_subtotal, f"{{{self.namespaces['cac']}}}TaxCategory")
 
                 # VAT Category Code (BT-118) - Zero rated
-                ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'Z'
+                ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}ID").text = 'Z'
 
                 # VAT Rate (BT-119) - Must be 0 for Zero rated (BR-Z-07 consistency)
-                ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}Percent").text = '0'
+                ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}Percent").text = '0'
 
                 # Tax Scheme
-                tax_scheme = ET.SubElement(tax_category, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-                ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+                tax_scheme = ET.SubElement(tax_category, f"{{{self.namespaces['cac']}}}TaxScheme")
+                ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
     
     def _add_legal_monetary_total(self, root: ET.Element, totals_data: Dict[str, Any], document_currency: str, allowances_charges: List[Dict[str, Any]] = None, lines: List[Dict[str, Any]] = None, taxes: List[Dict[str, Any]] = None):
         """Add legal monetary total information."""
         
-        legal_total = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}LegalMonetaryTotal")
+        legal_total = ET.SubElement(root, f"{{{self.namespaces['cac']}}}LegalMonetaryTotal")
         
         # Line Extension Amount
-        ET.SubElement(legal_total, f"{{{self.NAMESPACES['cbc']}}}LineExtensionAmount",
+        ET.SubElement(legal_total, f"{{{self.namespaces['cbc']}}}LineExtensionAmount",
                      currencyID=document_currency).text = \
             str(totals_data.get('line_extension_amount', 0))
         
@@ -1197,7 +1132,7 @@ class PEPPOLGenerator:
         # BR-CO-13 formula: Σ(BT-131) - BT-107 + BT-108
         tax_exclusive_amount = line_extension_total - allowance_total + charge_total
 
-        ET.SubElement(legal_total, f"{{{self.NAMESPACES['cbc']}}}TaxExclusiveAmount",
+        ET.SubElement(legal_total, f"{{{self.namespaces['cbc']}}}TaxExclusiveAmount",
                      currencyID=document_currency).text = \
             str(tax_exclusive_amount)
 
@@ -1208,7 +1143,7 @@ class PEPPOLGenerator:
         # BR-CO-15 formula: BT-109 + BT-110
         tax_inclusive_amount = tax_exclusive_amount + total_vat_amount
 
-        ET.SubElement(legal_total, f"{{{self.NAMESPACES['cbc']}}}TaxInclusiveAmount",
+        ET.SubElement(legal_total, f"{{{self.namespaces['cbc']}}}TaxInclusiveAmount",
                      currencyID=document_currency).text = \
             str(tax_inclusive_amount)
 
@@ -1222,17 +1157,17 @@ class PEPPOLGenerator:
         # BR-CO-16 formula: BT-112 - BT-113 + BT-114
         payable_amount = tax_inclusive_amount - paid_amount + rounding_amount
 
-        ET.SubElement(legal_total, f"{{{self.NAMESPACES['cbc']}}}PayableAmount",
+        ET.SubElement(legal_total, f"{{{self.namespaces['cbc']}}}PayableAmount",
                      currencyID=document_currency).text = \
             str(payable_amount)
 
         # Allowance Total (BT-107) - Sum of document level allowances
-        ET.SubElement(legal_total, f"{{{self.NAMESPACES['cbc']}}}AllowanceTotalAmount",
+        ET.SubElement(legal_total, f"{{{self.namespaces['cbc']}}}AllowanceTotalAmount",
                      currencyID=document_currency).text = \
             str(allowance_total)
 
         # Charge Total (BT-108) - BR-CO-12: Sum of document level charges
-        ET.SubElement(legal_total, f"{{{self.NAMESPACES['cbc']}}}ChargeTotalAmount",
+        ET.SubElement(legal_total, f"{{{self.namespaces['cbc']}}}ChargeTotalAmount",
                      currencyID=document_currency).text = \
             str(charge_total)
     
@@ -1241,75 +1176,76 @@ class PEPPOLGenerator:
         
         
         try:
-            invoice_line = ET.SubElement(root, f"{{{self.NAMESPACES['cac']}}}InvoiceLine")
+            invoice_line = ET.SubElement(root, f"{{{self.namespaces['cac']}}}InvoiceLine")
             
             # Line ID
-            ET.SubElement(invoice_line, f"{{{self.NAMESPACES['cbc']}}}ID").text = \
+            ET.SubElement(invoice_line, f"{{{self.namespaces['cbc']}}}ID").text = \
                 str(line_data.get('id', 1))
             
             # Invoiced Quantity
-            ET.SubElement(invoice_line, f"{{{self.NAMESPACES['cbc']}}}InvoicedQuantity",
+            ET.SubElement(invoice_line, f"{{{self.namespaces['cbc']}}}InvoicedQuantity",
                          unitCode=self._map_unit_code(line_data.get('unit_code', ''))).text = \
                 str(line_data.get('quantity', 1))
 
             # Line Extension Amount
-            ET.SubElement(invoice_line, f"{{{self.NAMESPACES['cbc']}}}LineExtensionAmount",
+            ET.SubElement(invoice_line, f"{{{self.namespaces['cbc']}}}LineExtensionAmount",
                          currencyID=document_currency).text = \
                 str(line_data.get('line_extension_amount', 0))
             
             # Item
-            item = ET.SubElement(invoice_line, f"{{{self.NAMESPACES['cac']}}}Item")
+            item = ET.SubElement(invoice_line, f"{{{self.namespaces['cac']}}}Item")
             
             # Item Description
             if 'description' in line_data and line_data['description']:
-                ET.SubElement(item, f"{{{self.NAMESPACES['cbc']}}}Description").text = \
+                ET.SubElement(item, f"{{{self.namespaces['cbc']}}}Description").text = \
                     line_data['description']
             
             # Item Name
-            ET.SubElement(item, f"{{{self.NAMESPACES['cbc']}}}Name").text = \
+            ET.SubElement(item, f"{{{self.namespaces['cbc']}}}Name").text = \
                 line_data.get('name', 'Item')
 
             # Classified Tax Category (BT-151) - Required for BR-S-01
-            classified_tax_category = ET.SubElement(item, f"{{{self.NAMESPACES['cac']}}}ClassifiedTaxCategory")
-            ET.SubElement(classified_tax_category, f"{{{self.NAMESPACES['cbc']}}}ID").text = \
+            classified_tax_category = ET.SubElement(item, f"{{{self.namespaces['cac']}}}ClassifiedTaxCategory")
+            ET.SubElement(classified_tax_category, f"{{{self.namespaces['cbc']}}}ID").text = \
                 line_data.get('tax_category_id', 'S')  # Default to Standard rated
 
             # VAT Rate (BT-152) - Required for BR-S-08
             if 'tax_rate' in line_data and line_data['tax_rate'] > 0:
-                ET.SubElement(classified_tax_category, f"{{{self.NAMESPACES['cbc']}}}Percent").text = \
+                ET.SubElement(classified_tax_category, f"{{{self.namespaces['cbc']}}}Percent").text = \
                     str(line_data['tax_rate'])
 
-            tax_scheme = ET.SubElement(classified_tax_category, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-            ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+            tax_scheme = ET.SubElement(classified_tax_category, f"{{{self.namespaces['cac']}}}TaxScheme")
+            ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
 
             # Item Sellers Item Identification
             if 'sellers_item_id' in line_data and line_data['sellers_item_id']:
-                sellers_id = ET.SubElement(item, f"{{{self.NAMESPACES['cac']}}}SellersItemIdentification")
-                ET.SubElement(sellers_id, f"{{{self.NAMESPACES['cbc']}}}ID").text = \
+                sellers_id = ET.SubElement(item, f"{{{self.namespaces['cac']}}}SellersItemIdentification")
+                ET.SubElement(sellers_id, f"{{{self.namespaces['cbc']}}}ID").text = \
                     line_data['sellers_item_id']
             
             # Price
-            price = ET.SubElement(invoice_line, f"{{{self.NAMESPACES['cac']}}}Price")
-            ET.SubElement(price, f"{{{self.NAMESPACES['cbc']}}}PriceAmount",
+            price = ET.SubElement(invoice_line, f"{{{self.namespaces['cac']}}}Price")
+            ET.SubElement(price, f"{{{self.namespaces['cbc']}}}PriceAmount",
                          currencyID=document_currency).text = \
                 str(line_data.get('unit_price', 0))
             
             # Line Tax Total
             if 'tax' in line_data and line_data['tax']:
-                line_tax_total = ET.SubElement(invoice_line, f"{{{self.NAMESPACES['cac']}}}TaxTotal")
-                ET.SubElement(line_tax_total, f"{{{self.NAMESPACES['cbc']}}}TaxAmount",
+                line_tax_total = ET.SubElement(invoice_line, f"{{{self.namespaces['cac']}}}TaxTotal")
+                ET.SubElement(line_tax_total, f"{{{self.namespaces['cbc']}}}TaxAmount",
                              currencyID=document_currency).text = \
                     str(line_data['tax'].get('amount', 0))
                 
-                tax_category = ET.SubElement(line_tax_total, f"{{{self.NAMESPACES['cac']}}}TaxCategory")
-                ET.SubElement(tax_category, f"{{{self.NAMESPACES['cbc']}}}ID").text = \
+                tax_category = ET.SubElement(line_tax_total, f"{{{self.namespaces['cac']}}}TaxCategory")
+                ET.SubElement(tax_category, f"{{{self.namespaces['cbc']}}}ID").text = \
                     line_data['tax'].get('category_id', 'S')
                 
-                tax_scheme = ET.SubElement(tax_category, f"{{{self.NAMESPACES['cac']}}}TaxScheme")
-                ET.SubElement(tax_scheme, f"{{{self.NAMESPACES['cbc']}}}ID").text = 'VAT'
+                tax_scheme = ET.SubElement(tax_category, f"{{{self.namespaces['cac']}}}TaxScheme")
+                ET.SubElement(tax_scheme, f"{{{self.namespaces['cbc']}}}ID").text = 'VAT'
                 
         except Exception as e:
             frappe.logger().error(f"Error processing invoice line: {str(e)}")
+            frappe.logger().error(f"Line data: {line_data}")
             raise 
 
     def _map_unit_code(self, erpnext_unit: str) -> str:

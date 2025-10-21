@@ -13,6 +13,7 @@ class EInvoiceProfile(Enum):
 	EN16931 = "EN 16931"
 	EXTENDED = "EXTENDED"
 	XRECHNUNG = "XRECHNUNG"
+	PEPPOL = "PEPPOL"
 
 	def __lt__(self, other):
 		# https://stackoverflow.com/a/39269589
@@ -21,6 +22,7 @@ class EInvoiceProfile(Enum):
 			EInvoiceProfile.EN16931,
 			EInvoiceProfile.XRECHNUNG,
 			EInvoiceProfile.EXTENDED,
+			EInvoiceProfile.PEPPOL,
 		]
 		return order.index(self) < order.index(other)
 
@@ -31,6 +33,7 @@ PROFILE_TO_SCHEMA = {
 	EInvoiceProfile.EN16931: "FACTUR-X_EN16931",
 	EInvoiceProfile.XRECHNUNG: "FACTUR-X_EN16931",
 	EInvoiceProfile.EXTENDED: "FACTUR-X_EXTENDED",
+	EInvoiceProfile.PEPPOL: None,  # PEPPOL uses UBL, not CII/drafthorse
 }
 
 # Map of EInvoiceProfile to GuidelineSpecifiedDocumentContextParameter
@@ -39,6 +42,7 @@ PROFILE_TO_GUIDELINE = {
 	EInvoiceProfile.EN16931: "urn:cen.eu:en16931:2017",
 	EInvoiceProfile.XRECHNUNG: "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
 	EInvoiceProfile.EXTENDED: "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended",
+	EInvoiceProfile.PEPPOL: "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0",  # PEPPOL BIS 3.0 UBL 2.1
 }
 GUIDELINE_TO_PROFILE = {v: k for k, v in PROFILE_TO_GUIDELINE.items()}
 

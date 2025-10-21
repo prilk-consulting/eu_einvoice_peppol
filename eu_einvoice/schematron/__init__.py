@@ -10,11 +10,29 @@ PROFILE_TO_XSL = {
 	EInvoiceProfile.EN16931: "EN16931-CII-validation-preprocessed.xsl",
 	EInvoiceProfile.EXTENDED: "Factur-X_1.07.2_EXTENDED.xsl",
 	EInvoiceProfile.XRECHNUNG: "XRechnung-CII-validation.xsl",
+	EInvoiceProfile.PEPPOL: ["CEN-EN16931-UBL.xsl", "PEPPOL-EN16931-UBL.xsl"],
 }
 
 
 def get_validation_errors(xml_string: str, profile: EInvoiceProfile):
-	return get_errors_from_stylesheet(xml_string, PROFILE_TO_XSL[profile])
+	xsl_config = PROFILE_TO_XSL[profile]
+	if isinstance(xsl_config, list):
+		return get_errors_from_stylesheets(xml_string, xsl_config)
+	else:
+		return get_errors_from_stylesheet(xml_string, xsl_config)
+
+
+def get_errors_from_stylesheets(xml_string: str, stylesheets: list[str]):
+	"""Run validation against multiple XSL files and combine results."""
+	all_errors = []
+	all_warnings = []
+
+	for stylesheet in stylesheets:
+		errors, warnings = get_errors_from_stylesheet(xml_string, stylesheet)
+		all_errors.extend(errors)
+		all_warnings.extend(warnings)
+
+	return all_errors, all_warnings
 
 
 def get_errors_from_stylesheet(xml_string: str, stylesheet: str):
