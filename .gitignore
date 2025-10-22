@@ -1,61 +1,7 @@
-# Python virtual environment
-env/
-venv/
-.venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Python cache files
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# UBL-2.1 Documentation files (too large for Git)
-eu_einvoice/peppol/UBL-2.1/*.pdf
-eu_einvoice/peppol/UBL-2.1/*.html
-eu_einvoice/peppol/UBL-2.1/*.xml
-eu_einvoice/peppol/UBL-2.1/art/
-eu_einvoice/peppol/UBL-2.1/cl/
-eu_einvoice/peppol/UBL-2.1/cva/
-eu_einvoice/peppol/UBL-2.1/db/
-eu_einvoice/peppol/UBL-2.1/mod/
-eu_einvoice/peppol/UBL-2.1/rnc/
-eu_einvoice/peppol/UBL-2.1/uml/
-eu_einvoice/peppol/UBL-2.1/val/
-eu_einvoice/peppol/UBL-2.1/xml/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+*.pyc
+*.egg-info
+*.swp
+tags
+node_modules
+__pycache__
