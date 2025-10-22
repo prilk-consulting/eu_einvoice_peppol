@@ -21,7 +21,7 @@ from frappe.utils.data import date_diff, flt, getdate, to_markdown
 
 from eu_einvoice.common_codes import CommonCodeRetriever
 from eu_einvoice.schematron import get_validation_errors
-from eu_einvoice.utils import EInvoiceProfile, get_drafthorse_schema, get_guideline
+from eu_einvoice.utils import EInvoiceProfile, get_drafthorse_schema, get_xsd_schema, get_guideline
 
 if TYPE_CHECKING:
 	from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
@@ -84,24 +84,11 @@ def get_einvoice(invoice: str | SalesInvoice) -> bytes:
 	if profile == EInvoiceProfile.PEPPOL:
 		# Use PEPPOL generator for PEPPOL profiles
 		from eu_einvoice.peppol.generator import PEPPOLGenerator
-		from eu_einvoice.peppol.profiles import PEPPOLProfile
-
-		peppol_generator = PEPPOLGenerator(
-			profile=PEPPOLProfile.PEPPOL_BIS_30,
-			invoice=invoice,
-			company=company,
-			customer=customer,
-			seller_address=seller_address,
-			buyer_address=buyer_address,
-			shipping_address=shipping_address,
-			seller_contact=seller_contact,
-			buyer_contact=buyer_contact,
-		)
+		peppol_generator = PEPPOLGenerator(invoice=invoice)
 		peppol_generator.create_einvoice()
 		doc = peppol_generator.get_einvoice()
-
 		invoice.run_method("after_einvoice_generation", doc)
-		return doc.serialize(schema=None)
+		return doc.serialize(schema=get_xsd_schema(profile))
 	else:
 		# Use standard EInvoiceGenerator for other profiles
 		generator = EInvoiceGenerator(

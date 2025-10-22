@@ -27,13 +27,12 @@ class EInvoiceProfile(Enum):
 		return order.index(self) < order.index(other)
 
 
-# Map of EInvoiceProfile to drafthorse schema name
+# Map of EInvoiceProfile to drafthorse schema name or XSD Schema name
 PROFILE_TO_SCHEMA = {
 	EInvoiceProfile.BASIC: "FACTUR-X_BASIC",
 	EInvoiceProfile.EN16931: "FACTUR-X_EN16931",
 	EInvoiceProfile.XRECHNUNG: "FACTUR-X_EN16931",
 	EInvoiceProfile.EXTENDED: "FACTUR-X_EXTENDED",
-	EInvoiceProfile.PEPPOL: None,  # PEPPOL uses UBL, not CII/drafthorse
 }
 
 # Map of EInvoiceProfile to GuidelineSpecifiedDocumentContextParameter
@@ -46,9 +45,19 @@ PROFILE_TO_GUIDELINE = {
 }
 GUIDELINE_TO_PROFILE = {v: k for k, v in PROFILE_TO_GUIDELINE.items()}
 
+# Map of EInvoiceProfile to XSD Schema name (for PEPPOL)
+PROFILE_TO_XSD_SCHEMA = {
+	EInvoiceProfile.PEPPOL: "UBL-Invoice-2.1",  # PEPPOL uses UBL 2.1 XSD validation
+}
+
+
+def get_xsd_schema(profile: EInvoiceProfile) -> str:
+	"""Return the XSD schema name for PEPPOL profile."""
+	return PROFILE_TO_XSD_SCHEMA.get(profile)
+
 
 def get_drafthorse_schema(profile: EInvoiceProfile) -> str:
-	"""Return the drafthorse schema name for the given profile."""
+	"""Return the drafthorse schema name for Factur-X profiles (BASIC, EN16931, XRECHNUNG, EXTENDED)."""
 	return PROFILE_TO_SCHEMA.get(profile)
 
 
