@@ -86,9 +86,8 @@ def get_einvoice(invoice: str | SalesInvoice) -> bytes:
 		from eu_einvoice.peppol.generator import PEPPOLGenerator
 		peppol_generator = PEPPOLGenerator(invoice=invoice)
 		peppol_generator.create_einvoice()
-		doc = peppol_generator.get_einvoice()
-		invoice.run_method("after_einvoice_generation", doc)
-		return doc.serialize(schema=get_xsd_schema(profile))
+		invoice.run_method("after_einvoice_generation", peppol_generator)
+		return peppol_generator.get_xml_bytes(schema=get_xsd_schema(profile))
 	else:
 		# Use standard EInvoiceGenerator for other profiles
 		generator = EInvoiceGenerator(
