@@ -386,7 +386,20 @@ class PEPPOLGenerator:
                         'taxable_amount': 0
                     }
                 tax_rates[rate]['amount'] += tax.tax_amount
-                tax_rates[rate]['taxable_amount'] += tax.net_amount or 0
+                
+                # Calculate taxable amount using same logic as E-Invoice core
+                if len(self.invoice.taxes) == 1:
+                    # We only have one tax, so we can use the net total as basis amount
+                    tax_rates[rate]['taxable_amount'] += self.invoice.net_total
+                elif hasattr(tax, "net_amount"):
+                    tax_rates[rate]['taxable_amount'] += tax.net_amount
+                elif hasattr(tax, "custom_net_amount"):
+                    tax_rates[rate]['taxable_amount'] += tax.custom_net_amount
+                elif tax.tax_amount and rate:
+                    # We don't know the basis amount for this tax, so we try to calculate it
+                    tax_rates[rate]['taxable_amount'] += round(tax.tax_amount / rate * 100, 2)
+                else:
+                    tax_rates[rate]['taxable_amount'] += 0
         
         # Create TaxSubtotal for each rate
         for rate, data in tax_rates.items():
