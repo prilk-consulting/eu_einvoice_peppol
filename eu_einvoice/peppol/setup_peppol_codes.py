@@ -1,11 +1,10 @@
+# Copyright (c) 2025, Prilk Consulting BV and contributors
 """
 PEPPOL Code List Setup Script
 
 This script imports PEPPOL standardized code lists into ERPNext and creates mappings
 between ERPNext objects and PEPPOL codes.
 
-Usage:
-    bench execute eu_einvoice.peppol.setup_peppol_codes.setup_peppol_codes
 """
 
 import frappe

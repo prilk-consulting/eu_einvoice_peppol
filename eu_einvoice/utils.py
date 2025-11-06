@@ -71,6 +71,41 @@ def get_profile(guideline: str) -> EInvoiceProfile:
 	return GUIDELINE_TO_PROFILE.get(guideline)
 
 
+def get_profile_from_xml(xml_bytes: bytes) -> EInvoiceProfile | None:
+	"""
+	Utility function to detect e-invoice profile from XML bytes.
+	"""
+	# Try CII format first (Factur-X)
+	try:
+		from drafthorse.models.document import Document as DrafthorseDocument
+		doc = DrafthorseDocument.parse(xml_bytes, strict=False)
+		guideline = doc.context.guideline_parameter.id._text
+		return get_profile(guideline)  # Uses GUIDELINE_TO_PROFILE mapping
+	except Exception:
+		pass
+	
+	# Try PEPPOL format (UBL 2.1)
+	try:
+		from lxml import etree as ET
+		from eu_einvoice.peppol import UBL_NAMESPACES
+		root = ET.fromstring(xml_bytes)
+		customization_id_elem = root.find('.//cbc:CustomizationID', UBL_NAMESPACES)
+		if customization_id_elem is not None and customization_id_elem.text:
+			customization_id = customization_id_elem.text
+			return get_profile(customization_id)  # Uses GUIDELINE_TO_PROFILE mapping
+	except Exception:
+		pass
+	
+	return None
+
+
+def get_xml_text(element, xpath, namespaces=None) -> str | None:
+	if element is None:
+		return None
+	result = element.find(xpath, namespaces or {})
+	return result.text if result is not None and result.text else None
+
+
 def identity(value):
 	"""Used for dummy translation"""
 	return value

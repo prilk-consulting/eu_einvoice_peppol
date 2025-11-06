@@ -16,7 +16,7 @@ from frappe.model.mapper import get_mapped_doc
 from lxml.etree import XMLSyntaxError
 
 from eu_einvoice.schematron import get_validation_errors
-from eu_einvoice.utils import EInvoiceProfile, get_profile
+from eu_einvoice.utils import EInvoiceProfile, get_profile, get_profile_from_xml, get_xml_text
 
 if TYPE_CHECKING:
 	from drafthorse.models.accounting import ApplicableTradeTax, MonetarySummation
@@ -105,15 +105,23 @@ class EInvoiceImport(Document):
 			frappe.throw(_("An E Invoice Import with the same Invoice ID and Supplier already exists."))
 
 	def before_save(self):
+		# Detect e-invoice profile and route to appropriate parsing method
 		if self.einvoice and self.has_value_changed("einvoice"):
-			self.read_values_from_einvoice()
+			xml_bytes = self.get_xml_bytes()
+			profile = get_profile_from_xml(xml_bytes)
+			
+			if profile == EInvoiceProfile.PEPPOL:
+				self.read_values_from_einvoice_peppol()
+			else:
+				self.read_values_from_einvoice()
+			
 			self.guess_supplier()
 			self.guess_company()
 			self.guess_uom()
 			self.guess_item_code()
 
 		self.guess_po_details()
-
+	
 	def before_submit(self):
 		if not self.supplier:
 			frappe.throw(_("Please create or select a supplier before submitting"))
@@ -191,6 +199,70 @@ class EInvoiceImport(Document):
 		self.parse_monetary_summation(doc.trade.settlement.monetary_summation)
 		self.parse_bank_details(doc.trade.settlement.payment_means)
 		self.parse_billing_period(doc.trade.settlement.period)
+
+	def read_values_from_einvoice_peppol(self) -> None:
+		# Parse PEPPOL UBL 2.1 XML and populate E Invoice Import fields
+		from lxml import etree as ET
+		xml_bytes = self.get_xml_bytes()
+
+		from eu_einvoice.peppol.validator import PEPPOLValidator
+		from eu_einvoice.peppol import UBL_NAMESPACES
+		from eu_einvoice.utils import get_xsd_schema
+		
+		peppol_validator = PEPPOLValidator()
+		try:
+			xml_bytes = peppol_validator.validate_xml_structure(xml_bytes)
+			root = ET.fromstring(xml_bytes)
+		except ValueError as e:
+			frappe.throw(_("The uploaded file does not contain valid XML data: {0}").format(str(e)))
+		
+		namespaces = UBL_NAMESPACES
+		
+		try:
+			customization_id = get_xml_text(root, './/cbc:CustomizationID', namespaces)
+			if customization_id:
+				profile_enum = get_profile(customization_id)
+				if profile_enum:
+					self.profile = profile_enum.value
+				else:
+					self.profile = "PEPPOL"
+			else:
+				self.profile = "PEPPOL"
+			
+			profile_enum = EInvoiceProfile(self.profile)
+			schema = get_xsd_schema(profile_enum)
+			if schema:
+				xml_bytes = peppol_validator.validate_xml_against_xsd(xml_bytes, schema)
+				root = ET.fromstring(xml_bytes)
+			
+			self._validate_schematron(xml_bytes)
+			
+			self.id = get_xml_text(root, './/cbc:ID', namespaces)
+			self.issue_date = get_xml_text(root, './/cbc:IssueDate', namespaces)
+			self.due_date = get_xml_text(root, './/cbc:DueDate', namespaces)
+			self.currency = get_xml_text(root, './/cbc:DocumentCurrencyCode', namespaces)
+			buyer_reference = get_xml_text(root, './/cbc:BuyerReference', namespaces)
+			
+			self.parse_peppol_seller(root, namespaces)
+			self.parse_peppol_buyer(root, namespaces)
+			
+			if (
+				not self.purchase_order
+				and buyer_reference
+				and frappe.db.exists("Purchase Order", buyer_reference)
+			):
+				self.purchase_order = buyer_reference
+			
+			self.parse_peppol_line_items(root, namespaces)
+			self.parse_peppol_taxes(root, namespaces)
+			self.parse_peppol_payment_terms(root, namespaces)
+			self.parse_peppol_monetary_totals(root, namespaces)
+			self.parse_peppol_bank_details(root, namespaces)
+			self.parse_peppol_billing_period(root, namespaces)
+		except Exception as e:
+			frappe.log_error(f"PEPPOL Parsing Error: {str(e)}", "E Invoice Import Parsing")
+			raise
+
 
 	def _validate_schematron(self, xml_bytes):
 		self.validation_errors = ""
@@ -358,13 +430,22 @@ class EInvoiceImport(Document):
 				continue
 
 			if row.unit_code:
-				rec20_3 = get_docnames_for("urn:xoev-de:kosit:codeliste:rec20_3", "UOM", row.unit_code)
-				if rec20_3:
-					row.uom = rec20_3[0]
+				# Use PEPPOL code lists for PEPPOL profile, Factur-X code lists for others
+				if self.profile == "PEPPOL":
+					from eu_einvoice.peppol import uom_codes
+					# Use PEPPOL UNECERec20 code list
+					uom = get_docnames_for(uom_codes.code_lists[0], "UOM", row.unit_code)
+					if uom:
+						row.uom = uom[0]
 				else:
-					rec21_3 = get_docnames_for("urn:xoev-de:kosit:codeliste:rec21_3", "UOM", row.unit_code)
-					if rec21_3:
-						row.uom = rec21_3[0]
+					# Use Factur-X code lists for CII/Factur-X profiles
+					rec20_3 = get_docnames_for("urn:xoev-de:kosit:codeliste:rec20_3", "UOM", row.unit_code)
+					if rec20_3:
+						row.uom = rec20_3[0]
+					else:
+						rec21_3 = get_docnames_for("urn:xoev-de:kosit:codeliste:rec21_3", "UOM", row.unit_code)
+						if rec21_3:
+							row.uom = rec21_3[0]
 			elif row.item:
 				stock_uom, purchase_uom = frappe.db.get_value("Item", row.item, ["stock_uom", "purchase_uom"])
 				row.uom = purchase_uom or stock_uom
@@ -422,6 +503,228 @@ class EInvoiceImport(Document):
 					reference_doctype=self.doctype,
 					reference_name=self.name,
 				)
+	
+	def parse_peppol_seller(self, root, namespaces):
+		"""Parse seller information from PEPPOL XML."""
+		seller_party = root.find('.//cac:AccountingSupplierParty/cac:Party', namespaces)
+		if seller_party is None:
+			return
+		
+		# Seller name
+		party_name = seller_party.find('.//cac:PartyLegalEntity/cbc:RegistrationName', namespaces)
+		if party_name is None:
+			party_name = seller_party.find('.//cac:PartyName/cbc:Name', namespaces)
+		self.seller_name = get_xml_text(seller_party, './/cac:PartyLegalEntity/cbc:RegistrationName', namespaces) or get_xml_text(seller_party, './/cac:PartyName/cbc:Name', namespaces)
+		
+		# Seller tax ID
+		self.seller_tax_id = get_xml_text(seller_party, './/cac:PartyTaxScheme/cbc:CompanyID', namespaces)
+		
+		# Seller electronic address
+		endpoint_id = seller_party.find('.//cbc:EndpointID', namespaces)
+		if endpoint_id is not None:
+			self.seller_electronic_address = endpoint_id.text
+			self.seller_electronic_address_scheme = endpoint_id.get('schemeID')
+		
+		# Seller address
+		address = seller_party.find('.//cac:PostalAddress', namespaces)
+		if address is not None:
+			self.seller_address_line_1 = get_xml_text(address, './/cbc:StreetName', namespaces)
+			self.seller_address_line_2 = get_xml_text(address, './/cbc:AdditionalStreetName', namespaces)
+			self.seller_postcode = get_xml_text(address, './/cbc:PostalZone', namespaces)
+			self.seller_city = get_xml_text(address, './/cbc:CityName', namespaces)
+			country_code = get_xml_text(address, './/cac:Country/cbc:IdentificationCode', namespaces)
+			if country_code:
+				country = frappe.db.get_value("Country", {"code": country_code.upper()}, "name")
+				self.seller_country = country
+	
+	def parse_peppol_buyer(self, root, namespaces):
+		"""Parse buyer information from PEPPOL XML."""
+		buyer_party = root.find('.//cac:AccountingCustomerParty/cac:Party', namespaces)
+		if buyer_party is None:
+			return
+		
+		# Buyer name
+		self.buyer_name = get_xml_text(buyer_party, './/cac:PartyLegalEntity/cbc:RegistrationName', namespaces) or get_xml_text(buyer_party, './/cac:PartyName/cbc:Name', namespaces)
+		
+		# Buyer electronic address
+		endpoint_id = buyer_party.find('.//cbc:EndpointID', namespaces)
+		if endpoint_id is not None:
+			self.buyer_electronic_address = endpoint_id.text
+			self.buyer_electronic_address_scheme = endpoint_id.get('schemeID')
+		
+		# Buyer address
+		address = buyer_party.find('.//cac:PostalAddress', namespaces)
+		if address is not None:
+			self.buyer_address_line_1 = get_xml_text(address, './/cbc:StreetName', namespaces)
+			self.buyer_address_line_2 = get_xml_text(address, './/cbc:AdditionalStreetName', namespaces)
+			self.buyer_postcode = get_xml_text(address, './/cbc:PostalZone', namespaces)
+			self.buyer_city = get_xml_text(address, './/cbc:CityName', namespaces)
+			country_code = get_xml_text(address, './/cac:Country/cbc:IdentificationCode', namespaces)
+			if country_code:
+				country = frappe.db.get_value("Country", {"code": country_code.upper()}, "name")
+				self.buyer_country = country
+	
+	def parse_peppol_monetary_totals(self, root, namespaces):
+		"""Parse monetary totals from PEPPOL XML."""
+		monetary_total = root.find('.//cac:LegalMonetaryTotal', namespaces)
+		if monetary_total is None:
+			return
+		
+		self.line_total = flt_or_none(get_xml_text(monetary_total, './/cbc:LineExtensionAmount', namespaces))
+		self.allowance_total = flt_or_none(get_xml_text(monetary_total, './/cbc:AllowanceTotalAmount', namespaces))
+		self.charge_total = flt_or_none(get_xml_text(monetary_total, './/cbc:ChargeTotalAmount', namespaces))
+		self.tax_basis_total = flt_or_none(get_xml_text(monetary_total, './/cbc:TaxExclusiveAmount', namespaces))
+		self.tax_total = flt_or_none(get_xml_text(monetary_total, './/cbc:TaxInclusiveAmount', namespaces))
+		self.grand_total = flt_or_none(get_xml_text(monetary_total, './/cbc:PayableAmount', namespaces))
+		self.due_payable = self.grand_total
+	
+	def parse_peppol_line_items(self, root, namespaces):
+		"""Parse line items from PEPPOL XML."""
+		self.items = []
+		for invoice_line in root.findall('.//cac:InvoiceLine', namespaces):
+			item = self.append("items")
+			
+			# Product name/description
+			product_name_full = get_xml_text(invoice_line, './/cac:Item/cbc:Name', namespaces)
+			if product_name_full:
+				if len(product_name_full) > 140:
+					item.product_name = product_name_full[:140]
+					item.product_description = product_name_full
+				else:
+					item.product_name = product_name_full
+					item.product_description = product_name_full
+			
+			# Product IDs
+			seller_product_id = get_xml_text(invoice_line, './/cac:Item/cac:SellersItemIdentification/cbc:ID', namespaces)
+			if seller_product_id:
+				item.seller_product_id = seller_product_id
+			
+			buyer_item_id = invoice_line.find('.//cac:Item/cac:BuyersItemIdentification/cbc:ID', namespaces)
+			item_code = buyer_item_id.text if buyer_item_id is not None and buyer_item_id.text else None
+			if item_code and not frappe.db.exists("Item", item_code):
+				item_code = None
+			item.item = item_code
+			
+			# Quantity and UOM
+			qty = invoice_line.find('.//cbc:InvoicedQuantity', namespaces)
+			qty_text = qty.text if qty is not None and qty.text else None
+			if qty_text:
+				item.billed_quantity = flt_or_none(qty_text)
+				item.unit_code = qty.get('unitCode') if qty is not None else None
+			
+			# Price and rate calculation
+			price_text = get_xml_text(invoice_line, './/cac:Price/cbc:PriceAmount', namespaces)
+			line_total_text = get_xml_text(invoice_line, './/cbc:LineExtensionAmount', namespaces)
+			
+			if price_text and qty_text:
+				# Calculate rate from price and quantity (similar to parse_line_item logic)
+				net_rate = float(price_text)
+				basis_qty = float(qty_text) or 1.0
+				item.net_rate = net_rate / basis_qty
+			elif price_text:
+				item.net_rate = float(price_text)
+			
+			# Line total
+			if line_total_text:
+				item.total_amount = flt_or_none(line_total_text)
+			
+			# Tax rate
+			tax_category = invoice_line.find('.//cac:Item/cac:ClassifiedTaxCategory', namespaces)
+			if tax_category is not None:
+				tax_rate_text = get_xml_text(tax_category, './/cbc:Percent', namespaces)
+				if tax_rate_text:
+					item.tax_rate = flt_or_none(tax_rate_text)
+	
+	def parse_peppol_taxes(self, root, namespaces):
+		"""Parse taxes from PEPPOL XML."""
+		self.taxes = []
+		tax_total = root.find('.//cac:TaxTotal', namespaces)
+		if tax_total is None:
+			return
+		
+		for tax_subtotal in tax_total.findall('.//cac:TaxSubtotal', namespaces):
+			t = self.append("taxes")
+			
+			# Tax basis
+			taxable_amount = get_xml_text(tax_subtotal, './/cbc:TaxableAmount', namespaces)
+			if taxable_amount:
+				t.basis_amount = flt_or_none(taxable_amount)
+			
+			# Tax rate
+			tax_category = tax_subtotal.find('.//cac:TaxCategory', namespaces)
+			if tax_category is not None:
+				tax_percent = get_xml_text(tax_category, './/cbc:Percent', namespaces)
+				if tax_percent:
+					t.rate_applicable_percent = flt_or_none(tax_percent)
+			
+			# Tax amount
+			tax_amount = get_xml_text(tax_subtotal, './/cbc:TaxAmount', namespaces)
+			if tax_amount:
+				t.calculated_amount = flt_or_none(tax_amount)
+	
+	def parse_peppol_payment_terms(self, root, namespaces):
+		"""Parse payment terms from PEPPOL XML."""
+		self.payment_terms = []
+		for payment_term in root.findall('.//cac:PaymentTerms', namespaces):
+			# Check if it's a simple due date (similar to parse_payment_term lines 284-286)
+			amount_text = get_xml_text(payment_term, './/cbc:Amount', namespaces)
+			if not amount_text:
+				# Simple due date (similar to parse_payment_term)
+				payment_due_date_text = get_xml_text(payment_term, './/cbc:PaymentDueDate', namespaces)
+				if payment_due_date_text:
+					self.due_date = payment_due_date_text
+				continue
+			
+			# Complex payment term with amount
+			t = self.append("payment_terms")
+			
+			payment_due_date_text = get_xml_text(payment_term, './/cbc:PaymentDueDate', namespaces)
+			if payment_due_date_text:
+				t.due = payment_due_date_text
+			
+			if amount_text:
+				t.partial_amount = flt_or_none(amount_text)
+			
+			# Description
+			t.description = get_xml_text(payment_term, './/cbc:Note', namespaces)
+			
+			# Discount terms (if any)
+			t.discount_basis_date = get_xml_text(payment_term, './/cac:PaymentDiscountTerms/cbc:BasisDate', namespaces)
+			discount_percent = get_xml_text(payment_term, './/cac:PaymentDiscountTerms/cbc:CalculationPercent', namespaces)
+			if discount_percent:
+				t.discount_calculation_percent = flt_or_none(discount_percent)
+			
+			discount_amount = get_xml_text(payment_term, './/cac:PaymentDiscountTerms/cbc:Amount', namespaces)
+			if discount_amount:
+				t.discount_actual_amount = flt_or_none(discount_amount)
+	
+	def parse_peppol_bank_details(self, root, namespaces):
+		"""Parse bank details from PEPPOL XML."""
+		payment_means = root.find('.//cac:PaymentMeans', namespaces)
+		if payment_means is None:
+			return
+		
+		financial_account = payment_means.find('.//cac:PayeeFinancialAccount', namespaces)
+		if financial_account is None:
+			return
+		
+		self.payee_iban = get_xml_text(financial_account, './/cbc:ID', namespaces)
+		
+		if EInvoiceProfile(self.profile) >= EInvoiceProfile.EN16931:
+			self.payee_account_name = get_xml_text(financial_account, './/cbc:Name', namespaces)
+			
+			financial_institution = financial_account.find('.//cac:FinancialInstitutionBranch', namespaces)
+			if financial_institution is not None:
+				self.payee_bic = get_xml_text(financial_institution, './/cac:FinancialInstitution/cbc:ID', namespaces)
+	
+	def parse_peppol_billing_period(self, root, namespaces):
+		"""Parse billing period from PEPPOL XML."""
+		period = root.find('.//cac:InvoicePeriod', namespaces)
+		if period is None:
+			return
+		
+		self.billing_period_start = get_xml_text(period, './/cbc:StartDate', namespaces)
+		self.billing_period_end = get_xml_text(period, './/cbc:EndDate', namespaces)
 
 
 def flt_or_none(value) -> float | None:

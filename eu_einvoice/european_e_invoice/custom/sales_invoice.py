@@ -84,10 +84,16 @@ def get_einvoice(invoice: str | SalesInvoice) -> bytes:
 	if profile == EInvoiceProfile.PEPPOL:
 		# Use PEPPOL generator for PEPPOL profiles
 		from eu_einvoice.peppol.generator import PEPPOLGenerator
-		peppol_generator = PEPPOLGenerator(invoice=invoice)
+		from eu_einvoice.peppol.validator import PEPPOLValidator
+		peppol_generator = PEPPOLGenerator(invoice)
 		peppol_generator.create_einvoice()
-		invoice.run_method("after_einvoice_generation", peppol_generator)
-		return peppol_generator.get_xml_bytes(schema=get_xsd_schema(profile))
+		xml_bytes = peppol_generator.get_xml_bytes()
+		peppol_validator = PEPPOLValidator()
+		xml_bytes = peppol_validator.validate_xml_structure(xml_bytes)
+		schema = get_xsd_schema(profile)
+		if schema:
+			return peppol_validator.validate_xml_against_xsd(xml_bytes, schema)
+		return xml_bytes
 	else:
 		# Use standard EInvoiceGenerator for other profiles
 		generator = EInvoiceGenerator(

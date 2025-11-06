@@ -8,6 +8,7 @@ In particular, this app supports reading and writing electronic invoices accordi
 - EN 16931
 - EXTENDED
 - XRECHNUNG
+- PEPPOL
 
 All profiles except for "XRECHNUNG" can be embedded in a PDF file, known as ZUGFeRD or Factur-X.
 
@@ -17,7 +18,11 @@ All profiles except for "XRECHNUNG" can be embedded in a PDF file, known as ZUGF
 
 ---
 
-This app cannot currently read or write UBL invoices. It also does not provide any special way of sending or receiving e-invoices (e.g. Peppol). Instead, it focuses on the conversion between ERPNext's internal data model and the XML format of the above standards.
+This app supports reading and writing [UBL 2.1](http://docs.oasis-open.org/ubl/UBL-2.1.html) invoices for the PEPPOL profile (PEPPOL BIS Billing 3.0). For other profiles (BASIC, EN 16931, EXTENDED, XRECHNUNG), it uses the UN/CEFACT CII standard.
+
+The app focuses on the conversion between ERPNext's internal data model and the XML format of the above standards.
+
+
 
 ## Installation
 
@@ -25,7 +30,7 @@ You can install this app using the [bench](https://github.com/frappe/bench) CLI:
 
 ```bash
 cd $PATH_TO_YOUR_BENCH
-bench get-app https://github.com/alyf-de/eu_einvoice --branch $MAJOR_VERSION
+bench get-app https://github.com/prilk-consulting/eu_einvoice --branch $MAJOR_VERSION
 bench install-app eu_einvoice
 ```
 
@@ -77,6 +82,24 @@ Then, you can map a **Common Code** from **Code List** "UNTDID.4461", e.g. "Cred
 
 Please note that the eInvoice standard only supports one payment means per invoice, so you should not specify multiple **Modes of Payment** in the same invoice.
 
+### PEPPOL Code Lists
+
+For PEPPOL profiles, additional code lists are required. These can be imported using the "Import Genericode" button in **Code List**:
+
+Code List | Purpose
+----------|--------
+PEPPOL Payment Means Code | Payment methods for PEPPOL invoices
+PEPPOL Unit of Measure Code | Units of measure for PEPPOL line items
+PEPPOL Tax Category Code | Tax categories for PEPPOL invoices
+PEPPOL Country Code | Country codes for addresses
+PEPPOL Electronic Address Identifier Scheme | Electronic address schemes for PEPPOL participants
+
+These code lists are automatically set up when you install the app. You can verify and update mappings in the **Code List** doctype.
+
+The PEPPOL code lists are sourced from the [PEPPOL BIS Billing 3.0 repository](https://github.com/OpenPEPPOL/peppol-bis-invoice-3/tree/master/structure/codelist) and are included in the app's `peppol/peppol-bis-invoice-3/structure/codelist/` folder.
+
+The UBL 2.1 XSD schemas are sourced from the [OASIS UBL 2.1 specification](http://docs.oasis-open.org/ubl/UBL-2.1.html) and are included in the app's `peppol/UBL-2.1/xsd/` folder.
+
 ### E Invoice Settings
 
 eInvoice validation can be time-consuming. Use **E Invoice Settings** to configure when validation occurs and how errors are handled:
@@ -86,6 +109,7 @@ eInvoice validation can be time-consuming. Use **E Invoice Settings** to configu
   - *Empty* (default): No action taken
   - *Warning Message*: Show errors but allow save/submit
   - *Error Message*: Block save/submit and show errors
+
 
 ## Usage
 
@@ -196,6 +220,13 @@ Document-level discounts are currently not supported, because the e invoice stan
 
 During validation of the **Sales Invoice**, the potential eInvoice is created and validated against the schematron rules for the selected _E Invoice Profile_, so that you can see any potential problems before submitting it.
 
+For PEPPOL profiles, the validation includes:
+1. **XML Syntax Validation**: Ensures the XML is well-formed
+2. **XSD Validation**: Validates the XML against the UBL 2.1 XSD schema
+3. **Schematron Validation**: Validates business rules using PEPPOL Schematron files
+
+Validation results are logged to the console and can be viewed in the **Sales Invoice** document's validation fields.
+
 #### Export Sales Invoice as XML (XRechnung) or PDF+XML (ZUGFeRD)
 
 To download the XML file (XRechnung), open a **Sales Invoice** and click on "..." > "Download eInvoice".
@@ -237,6 +268,11 @@ BASIC | EN 16931 | EXTENDED
 ### Purchase Invoice
 
 To import a new eInvoice, create a new **E Invoice Import** and upload the XML or PDF file.
+
+For PEPPOL invoices (UBL 2.1), the app automatically detects the profile and validates the XML against:
+1. **XML Syntax Validation**: Ensures the XML is well-formed
+2. **XSD Validation**: Validates against the UBL 2.1 XSD schema
+3. **Schematron Validation**: Validates PEPPOL business rules
 
 We extract the E-Invoice Profile and validate the XML against the corresponding schematron rules.
 
@@ -317,6 +353,7 @@ You can find XML files for testing in the following repositories:
 
 - [EN16931](https://github.com/ConnectingEurope/eInvoicing-EN16931/tree/master/cii/examples)
 - [XRechnung](https://projekte.kosit.org/xrechnung/xrechnung-testsuite/-/tree/master/src/test/business-cases/standard?ref_type=heads) (files ending in `_uncefact.xml`)
+- [PEPPOL BIS Billing 3.0](https://github.com/OpenPEPPOL/peppol-bis-invoice-3/tree/master/rules/examples) - UBL 2.1 examples for PEPPOL
 
 ## Add your custom logic
 
@@ -370,6 +407,8 @@ You can upload an XML invoice file to https://www.itb.ec.europa.eu/invoice/uploa
 
 E-invoices according to the "XRECHNUNG" profile can be validated at https://erechnungsvalidator.service-bw.de.
 
+For PEPPOL invoices (UBL 2.1), you can use the [PEPPOL Validation Service](https://peppol.helger.com/public/locale-en_US/menuitem-validation) or your PEPPOL service provider's validation tools.
+
 ## Contributing
 
 This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
@@ -409,7 +448,7 @@ This app can use GitHub Actions for CI. The following workflows are configured:
 
 - [lxml](https://github.com/lxml/lxml) by Infrae
 
-    Used for general XML parsing.
+    Used for general XML parsing and XSD validation for PEPPOL UBL 2.1 invoices.
 
 - [SchXslt](https://github.com/schxslt/schxslt) by David Maus
 
@@ -438,6 +477,8 @@ Many thanks to the following companies for sponsoring the initial development of
 ## License
 
 Copyright (C) 2024 ALYF GmbH
+
+PEPPOL extension contributed by Prilk Consulting BV.
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or(at your option) any later version.
 

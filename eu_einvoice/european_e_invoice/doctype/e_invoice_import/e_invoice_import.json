@@ -344,7 +344,7 @@
    "fieldname": "profile",
    "fieldtype": "Read Only",
    "label": "Profile",
-   "options": "BASIC\nEN 16931\nEXTENDED\nXRECHNUNG",
+   "options": "BASIC\nEN 16931\nEXTENDED\nXRECHNUNG\nPEPPOL",
    "read_only": 1
   },
   {
