@@ -477,8 +477,10 @@ Many thanks to the following companies for sponsoring the initial development of
 ## License
 
 Copyright (C) 2024 ALYF GmbH
+Copyright (C) 2025 Prilk Consulting 
 
-PEPPOL extension contributed by Prilk Consulting BV.
+This app extends the functionality of electronic invoicing in ERPNext by adding Peppol integration for sending and receiving invoices. It builds on the original [alyf-de/eu_einvoice](https://github.com/alyf-de/eu_einvoice) project, which handles UN/CEFACT CII standards (BASIC, EN 16931, EXTENDED, XRECHNUNG) and ZUGFeRD/Factur-X embedding.
+
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or(at your option) any later version.
 
