@@ -454,26 +454,6 @@ This app can use GitHub Actions for CI. The following workflows are configured:
 
     Used to convert Schematron files to XSL.
 
-## Sponsors
-
-Many thanks to the following companies for sponsoring the initial development of this app:
-
-- aepfel+birnen IT GmbH
-- axessio Hausverwaltung GmbH
-- Burkhard Baumsteigtechnik GmbH & Co. KG
-- DriveCon GmbH
-- ibb testing gmbh
-- itsdave GmbH
-- iXGate UG
-- Kautenburger IT GmbH
-- MERECS Engineering GmbH
-- Royal Software GmbH
-- voidsy GmbH
-- … and many more
-
-> [!NOTE]
-> We only list companies that have explicitly agreed to have their name published here. If you want to be listed here too, please send us a short note by email.
-
 ## License
 
 Copyright (C) 2024 ALYF GmbH
