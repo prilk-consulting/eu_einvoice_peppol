@@ -42,7 +42,8 @@ Please use a branch (`MAJOR_VERSION`) that matches the major version of ERPNext 
 
 E-invoices rely on common codes that describe the content of the invoice. E.g. "C62" is used for the UOM "One" and "ZZZ" is used for a mutually agreed mode of payment.
 
-Common codes are part of a code list. You'll need to import the code lists and map the codes you need to the corresponding ERPNext entities. Please use the "Import Genericode" button in **Code List** and paste the URL linked below.
+Common codes are part of a code list. You'll need to import the code lists and map the codes you need to the corresponding ERPNext entities. Please use the "Import Genericode" button in **Code List** and paste the URL linked below. For Peppol, Click on the button on Einvoice settings to create the code list.
+
 
 Code List | Mapped DocType | Default Value
 ----------|----------------|--------------
@@ -74,6 +75,17 @@ Please make sure to import the **Electronic Address Scheme** code list first.
 
 If not specified, email addresses are used as electronic addresses for outgoing invoices. For the Customer, we use the _Contact Email_ or _Buyer Address_ > _Email ID_. For the Company, we use the _Seller Contact_ > _Email ID_ or _Company_ > _Email_.
 
+Maintaining the right Electronic Address Schema is necessary for Peppol. It need to be maintained for Customer, Supplier and Company for which peppol einvoice is sent.
+
+Maintaing EAS Code for Customer
+![Maiintain EAS Code for Customer](img/maintain_eas_code_customer.png)
+
+Maintaining EAS Code for Supplier
+![Maiintain EAS Code for Supplier](img/maintain_eas_code_supplier.png)
+
+Maintaining EAS Code for Company
+![Maiintain EAS Code for Customer](img/maintain_eas_code_company.png)
+
 ### Bank Details
 
 If you want your eInvoice to contain bank details, you need to set up a **Mode of Payment** of type "Bank", link the company's corresponding **Account** and create a **Bank Account** for the same account.
@@ -94,11 +106,14 @@ PEPPOL Tax Category Code | Tax categories for PEPPOL invoices
 PEPPOL Country Code | Country codes for addresses
 PEPPOL Electronic Address Identifier Scheme | Electronic address schemes for PEPPOL participants
 
-These code lists are automatically set up when you install the app. You can verify and update mappings in the **Code List** doctype.
+These code lists are created from Einvoice setings. You can verify and update mappings in the **Code List** doctype. Click on the button provided here to create the code lists.
 
-The PEPPOL code lists are sourced from the [PEPPOL BIS Billing 3.0 repository](https://github.com/OpenPEPPOL/peppol-bis-invoice-3/tree/master/structure/codelist) and are included in the app's `peppol/peppol-bis-invoice-3/structure/codelist/` folder.
+![Set Up Peppol Code List](img/set_up_peppol_code_list.png)
+
+The PEPPOL code lists are sourced from the [PEPPOL BIS Billing 3.0 repository](https://github.com/OpenPEPPOL/peppol-bis-invoice-3/tree/master/structure/codelist).
 
 The UBL 2.1 XSD schemas are sourced from the [OASIS UBL 2.1 specification](http://docs.oasis-open.org/ubl/UBL-2.1.html) and are included in the app's `peppol/UBL-2.1/xsd/` folder.
+
 
 ### E Invoice Settings
 
