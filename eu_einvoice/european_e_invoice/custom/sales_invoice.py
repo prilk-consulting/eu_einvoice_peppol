@@ -90,7 +90,7 @@ def get_einvoice(invoice: str | SalesInvoice) -> bytes:
 		xml_bytes = peppol_generator.get_xml_bytes()
 		peppol_validator = PEPPOLValidator()
 		xml_bytes = peppol_validator.validate_xml_structure(xml_bytes)
-		schema = get_xsd_schema(profile)
+		schema = get_xsd_schema(profile, invoice)
 		if schema:
 			return peppol_validator.validate_xml_against_xsd(xml_bytes, schema)
 		return xml_bytes

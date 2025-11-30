@@ -51,9 +51,20 @@ PROFILE_TO_XSD_SCHEMA = {
 }
 
 
-def get_xsd_schema(profile: EInvoiceProfile) -> str:
-	"""Return the XSD schema name for PEPPOL profile."""
-	return PROFILE_TO_XSD_SCHEMA.get(profile)
+def get_xsd_schema(profile: EInvoiceProfile, invoice=None) -> str:
+	"""Return the XSD schema name for PEPPOL profile.
+
+	For PEPPOL, returns UBL-CreditNote-2.1 for credit notes (is_return=1),
+	or UBL-Invoice-2.1 for regular invoices.
+	"""
+	schema = PROFILE_TO_XSD_SCHEMA.get(profile)
+
+	# For PEPPOL, use CreditNote schema if it's a return invoice
+	if profile == EInvoiceProfile.PEPPOL and invoice:
+		if hasattr(invoice, 'is_return') and invoice.is_return:
+			schema = "UBL-CreditNote-2.1"
+
+	return schema
 
 
 def get_drafthorse_schema(profile: EInvoiceProfile) -> str:
