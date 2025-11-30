@@ -104,8 +104,10 @@ class PEPPOLGenerator:
         
         issue_date = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}IssueDate")
         issue_date.text = self.format_date(self.invoice.posting_date)
-        
-        if self.invoice.due_date:
+
+        # DueDate is only allowed in Invoice, not in CreditNote
+        is_credit_note = hasattr(self.invoice, 'is_return') and self.invoice.is_return
+        if self.invoice.due_date and not is_credit_note:
             due_date = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}DueDate")
             due_date.text = self.format_date(self.invoice.due_date)
 
