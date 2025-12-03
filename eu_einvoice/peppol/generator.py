@@ -299,27 +299,26 @@ class PEPPOLGenerator:
         tax_amount.text = str(flt(tax_total_amount, 2))
         tax_amount.set("currencyID", self.invoice.currency)
         
+        # Aggregate taxes by rate, handling both item-level and invoice-level taxes
         tax_rates = {}
-        for tax in self.invoice.taxes:
-            if tax.charge_type != "Actual" and tax.tax_amount > 0:
-                rate = tax.rate or 0
-                if rate not in tax_rates:
-                    tax_rates[rate] = {
-                        'amount': 0,
-                        'taxable_amount': 0
-                    }
-                tax_rates[rate]['amount'] += tax.tax_amount
-                
-                if len(self.invoice.taxes) == 1:
-                    tax_rates[rate]['taxable_amount'] += self.invoice.net_total
-                elif hasattr(tax, "net_amount"):
-                    tax_rates[rate]['taxable_amount'] += tax.net_amount
-                elif hasattr(tax, "custom_net_amount"):
-                    tax_rates[rate]['taxable_amount'] += tax.custom_net_amount
-                elif tax.tax_amount and rate:
-                    tax_rates[rate]['taxable_amount'] += round(tax.tax_amount / rate * 100, 2)
-                else:
-                    tax_rates[rate]['taxable_amount'] += 0
+
+        # Iterate through items to get their applicable tax rates
+        for item in self.invoice.items:
+            rate = self._get_item_tax_rate(item)
+
+            if not rate or rate == 0:
+                continue
+
+            if rate not in tax_rates:
+                tax_rates[rate] = {
+                    'amount': 0,
+                    'taxable_amount': 0
+                }
+
+            # Calculate tax amount for this item
+            tax_amount = flt(item.net_amount) * rate / 100
+            tax_rates[rate]['amount'] += tax_amount
+            tax_rates[rate]['taxable_amount'] += flt(item.net_amount)
         
         for rate, data in tax_rates.items():
             tax_subtotal = ET.SubElement(tax_total, f"{{{self.namespaces['cac']}}}TaxSubtotal")
