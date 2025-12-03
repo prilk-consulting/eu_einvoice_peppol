@@ -104,12 +104,16 @@ class PEPPOLGenerator:
         
         issue_date = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}IssueDate")
         issue_date.text = self.format_date(self.invoice.posting_date)
-        
-        if self.invoice.due_date:
+
+        # DueDate is only allowed in Invoice, not in CreditNote
+        is_credit_note = hasattr(self.invoice, 'is_return') and self.invoice.is_return
+        if self.invoice.due_date and not is_credit_note:
             due_date = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}DueDate")
             due_date.text = self.format_date(self.invoice.due_date)
-        
-        invoice_type = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}InvoiceTypeCode")
+
+        # Use CreditNoteTypeCode for credit notes, InvoiceTypeCode for invoices
+        type_code_element = 'CreditNoteTypeCode' if is_credit_note else 'InvoiceTypeCode'
+        invoice_type = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}{type_code_element}")
         invoice_type.text = self.get_invoice_type_code(self.invoice)
         
         currency_code = ET.SubElement(self.root, f"{{{self.namespaces['cbc']}}}DocumentCurrencyCode")
@@ -247,12 +251,17 @@ class PEPPOLGenerator:
     
     def _add_line_item(self, root: ET.Element, item):
         # Add a single line item
-        invoice_line = ET.SubElement(self.root, f"{{{self.namespaces['cac']}}}InvoiceLine")
-        
+        # Use CreditNoteLine for credit notes, InvoiceLine for regular invoices
+        is_credit_note = hasattr(self.invoice, 'is_return') and self.invoice.is_return
+        line_element_name = 'CreditNoteLine' if is_credit_note else 'InvoiceLine'
+        quantity_element_name = 'CreditedQuantity' if is_credit_note else 'InvoicedQuantity'
+
+        invoice_line = ET.SubElement(self.root, f"{{{self.namespaces['cac']}}}{line_element_name}")
+
         line_id = ET.SubElement(invoice_line, f"{{{self.namespaces['cbc']}}}ID")
         line_id.text = str(item.idx)
-        
-        quantity = ET.SubElement(invoice_line, f"{{{self.namespaces['cbc']}}}InvoicedQuantity")
+
+        quantity = ET.SubElement(invoice_line, f"{{{self.namespaces['cbc']}}}{quantity_element_name}")
         quantity.text = str(flt(item.qty, item.precision("qty")))
         quantity.set("unitCode", self.map_unit_code(item.uom))
         
@@ -480,11 +489,15 @@ class PEPPOLGenerator:
     
     def initialize_peppol_xml(self) -> ET.Element:
         # Initialize the PEPPOL XML document with root element and namespaces
-        root = ET.Element('{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice')
-        
+        # Use CreditNote root element for credit notes (is_return=1), Invoice otherwise
+        if hasattr(self.invoice, 'is_return') and self.invoice.is_return:
+            root = ET.Element('{urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2}CreditNote')
+        else:
+            root = ET.Element('{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice')
+
         for prefix, uri in self.namespaces.items():
             ET.register_namespace(prefix, uri)
-            
+
         return root
     
     def finalize_xml_document(self, root: ET.Element) -> str:
